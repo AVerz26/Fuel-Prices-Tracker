@@ -1,19 +1,19 @@
-# ⛽ Menor Preço SEFAZ-MT | Pipeline Seguro (GitHub Actions + Supabase + GitHub Pages)
+#  Menor Preço SEFAZ-MT | Pipeline Seguro (GitHub Actions + Supabase + GitHub Pages)
 
 Pipeline automatizado de Web Scraping para monitoramento contínuo dos preços de combustíveis (Etanol, Gasolina Comum, Gasolina Aditivada, Diesel S10 e S500) em Mato Grosso.
 
 ---
 
-## 🔒 Arquitetura de Segurança de Dados
+##  Arquitetura de Segurança de Dados
 
-- 🛡️ **Zero Dados no Repositório Git**: Nenhum dado de preço é versionado ou visível no GitHub.
-- 🔐 **Autenticação Obrigatória no GitHub Pages**: O acesso ao painel requer login com **E-mail e Senha** via **Supabase Auth**.
-- 🚦 **Row-Level Security (RLS)**: Consultas diretas não autenticadas ao banco são bloqueadas em nível de banco de dados pelo PostgreSQL.
-- 🤖 **Extração Automática com GitHub Actions**: Roda em segundo plano com Playwright Headless e salva diretamente no Supabase via credenciais seguras.
+-  **Zero Dados no Repositório Git**: Nenhum dado de preço é versionado ou visível no GitHub.
+-  **Autenticação Obrigatória no GitHub Pages**: O acesso ao painel requer login com **E-mail e Senha** via **Supabase Auth**.
+-  **Row-Level Security (RLS)**: Consultas diretas não autenticadas ao banco são bloqueadas em nível de banco de dados pelo PostgreSQL.
+-  **Extração Automática com GitHub Actions**: Roda em segundo plano com Playwright Headless e salva diretamente no Supabase via credenciais seguras.
 
 ---
 
-## 📁 Estrutura do Projeto
+##  Estrutura do Projeto
 
 ```
 menor-preco-sefaz-mt/
@@ -103,7 +103,7 @@ No seu repositório no GitHub:
 
 ---
 
-## 💻 Execução Local (Opcional)
+##  Execução Local (Opcional)
 
 ```bash
 # 1. Instalar dependências
