@@ -1,0 +1,15 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Regra da Coleção de Preços
+    match /precos/{document} {
+      // Apenas usuários autenticados (com Google ou e-mail) podem LER os dados
+      allow read: if request.auth != null;
+      
+      // Bloqueia escrita direta pelo frontend (apenas o GitHub Actions com Admin SDK pode escrever)
+      allow write: if false;
+    }
+    
+  }
+}

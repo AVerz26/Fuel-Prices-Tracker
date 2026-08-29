@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Menor Preço MT | Painel Seguro & Mapa</title>
-    <meta name="description" content="Acompanhe os menores preços de combustíveis coletados da SEFAZ-MT com mapa interativo, evolução histórica e paridade etanol/gasolina.">
+    <title>Menor Preço MT | Painel Seguro & Mapa (Firebase)</title>
+    <meta name="description" content="Acompanhe os menores preços de combustíveis coletados da SEFAZ-MT com mapa interativo, evolução histórica e paridade etanol/gasolina via Google Firebase.">
     
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -21,10 +21,12 @@
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    <!-- Supabase JS Client CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Firebase JS SDK (Compat v10) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
-    <!-- Supabase Project Config -->
+    <!-- Firebase Project Config -->
     <script src="config.js"></script>
 
     <!-- Custom CSS -->
@@ -40,7 +42,7 @@
                 </div>
                 <div class="brand-text">
                     <span class="brand-title">MENOR PREÇO <strong>MT</strong></span>
-                    <span class="brand-badge"><span class="pulse-dot"></span> Protegido (RLS)</span>
+                    <span class="brand-badge"><span class="pulse-dot"></span> Google Firebase</span>
                 </div>
             </div>
 
@@ -55,7 +57,7 @@
                     <div class="user-avatar" id="userAvatar">
                         <i class="fa-solid fa-user-check"></i>
                     </div>
-                    <span class="user-email" id="userEmailText">usuario@exemplo.com</span>
+                    <span class="user-email" id="userEmailText">usuario@gmail.com</span>
                     <button id="logoutBtn" class="btn-logout" title="Encerrar sessão">
                         <i class="fa-solid fa-right-from-bracket"></i> Sair
                     </button>
@@ -78,17 +80,17 @@
                         <i class="fa-solid fa-lock"></i>
                     </div>
                     <h2>Acesso Restrito</h2>
-                    <p>Entre com sua conta autorizada para visualizar o mapa e as análises em tempo real.</p>
+                    <p>Faça login com sua conta autorizada para visualizar os preços, mapa e análises em tempo real.</p>
                 </div>
 
                 <div class="auth-alert error" id="authAlert" style="display: none;">
                     <i class="fa-solid fa-triangle-exclamation"></i>
-                    <span id="authAlertMsg">E-mail ou senha incorretos.</span>
+                    <span id="authAlertMsg">Erro de autenticação.</span>
                 </div>
 
-                <!-- Botão Login com GitHub (OAuth direto) -->
-                <button type="button" id="btnGitHubLogin" class="btn-github">
-                    <i class="fa-brands fa-github"></i> Entrar com GitHub
+                <!-- Botão Login com Google (1 clique!) -->
+                <button type="button" id="btnGoogleLogin" class="btn-google">
+                    <i class="fa-brands fa-google"></i> Entrar com Google
                 </button>
 
                 <div class="auth-divider">
@@ -117,29 +119,33 @@
                     </button>
                 </form>
 
-                <!-- Configuração de Conexão Supabase (Expansível) -->
+                <!-- Configuração de Conexão Firebase (Expansível) -->
                 <div class="config-accordion">
                     <button type="button" class="accordion-toggle" id="configToggleBtn">
-                        <i class="fa-solid fa-gear"></i> Configurações do Supabase <i class="fa-solid fa-chevron-down chevron"></i>
+                        <i class="fa-solid fa-gear"></i> Configurações do Firebase <i class="fa-solid fa-chevron-down chevron"></i>
                     </button>
                     <div class="accordion-content" id="configContent" style="display: none;">
-                        <p class="config-desc">Insira a Anon Key do projeto <code>xqebwizmvxkgbezaoosb</code>:</p>
+                        <p class="config-desc">Cole as chaves do seu Web App no Firebase (Console > Project Settings):</p>
                         <div class="form-group">
-                            <label for="cfgSupabaseUrl">Supabase URL</label>
-                            <input type="url" id="cfgSupabaseUrl" value="https://xqebwizmvxkgbezaoosb.supabase.co">
+                            <label for="cfgApiKey">API Key</label>
+                            <input type="text" id="cfgApiKey" placeholder="AIzaSy...">
                         </div>
                         <div class="form-group">
-                            <label for="cfgSupabaseKey">Supabase Anon Key (Public Key)</label>
-                            <input type="text" id="cfgSupabaseKey" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6...">
+                            <label for="cfgProjectId">Project ID</label>
+                            <input type="text" id="cfgProjectId" placeholder="seu-projeto-12345">
+                        </div>
+                        <div class="form-group">
+                            <label for="cfgAuthDomain">Auth Domain</label>
+                            <input type="text" id="cfgAuthDomain" placeholder="seu-projeto.firebaseapp.com">
                         </div>
                         <button type="button" id="saveConfigBtn" class="btn-secondary btn-full">
-                            <i class="fa-solid fa-floppy-disk"></i> Salvar Chaves
+                            <i class="fa-solid fa-floppy-disk"></i> Salvar Chaves do Firebase
                         </button>
                     </div>
                 </div>
 
                 <div class="auth-footer-notice">
-                    <i class="fa-solid fa-shield-check"></i> Protegido com <strong>Row-Level Security (RLS)</strong> no PostgreSQL.
+                    <i class="fa-solid fa-shield-check"></i> Protegido com <strong>Firebase Security Rules</strong>.
                 </div>
             </div>
         </section>
@@ -384,7 +390,7 @@
     <footer class="footer">
         <div class="footer-container">
             <p><strong>Menor Preço MT</strong> &copy; 2026. Acesso Seguro Autenticado.</p>
-            <p class="footer-sub">Pipeline automatizado via GitHub Actions conectado ao Supabase com mapa interativo e análise de paridade.</p>
+            <p class="footer-sub">Pipeline automatizado via GitHub Actions conectado ao Google Cloud Firestore com mapa interativo e análise de paridade.</p>
         </div>
     </footer>
 

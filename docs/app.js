@@ -1,11 +1,12 @@
 /**
  * Menor Preço MT - Interactive Dashboard Logic
- * Autenticação via Supabase Auth (GitHub OAuth / E-mail) + Mapa Leaflet + Evolução Temporal + Paridade 70%
+ * Autenticação via Google Firebase (Google 1-Clique / E-mail) + Firestore + Mapa Leaflet + Evolução Temporal + Paridade 70%
  */
 
 // Estado Global da Aplicação
 const state = {
-    supabaseClient: null,
+    firebaseApp: null,
+    db: null,
     currentUser: null,
     allData: [],
     filteredData: [],
@@ -39,87 +40,75 @@ const DEFAULT_MT_CENTER = [-15.552, -54.283]; // Centro de MT (Primavera do Lest
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
     initEventListeners();
-    initSupabase();
+    initFirebase();
 });
 
-// 1. Inicialização do Supabase
-function initSupabase() {
-    const savedUrl = localStorage.getItem('supabase_url') || (window.SUPABASE_CONFIG && window.SUPABASE_CONFIG.url) || "https://xqebwizmvxkgbezaoosb.supabase.co";
-    const savedKey = localStorage.getItem('supabase_anon_key') || (window.SUPABASE_CONFIG && window.SUPABASE_CONFIG.anonKey);
+// 1. Inicialização do Firebase
+function initFirebase() {
+    const savedApiKey = localStorage.getItem('firebase_api_key') || (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey);
+    const savedProjectId = localStorage.getItem('firebase_project_id') || (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.projectId);
+    const savedAuthDomain = localStorage.getItem('firebase_auth_domain') || (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.authDomain);
 
-    if (savedUrl) document.getElementById('cfgSupabaseUrl').value = savedUrl;
-    if (savedKey) document.getElementById('cfgSupabaseKey').value = savedKey;
+    if (savedApiKey) document.getElementById('cfgApiKey').value = savedApiKey;
+    if (savedProjectId) document.getElementById('cfgProjectId').value = savedProjectId;
+    if (savedAuthDomain) document.getElementById('cfgAuthDomain').value = savedAuthDomain;
 
-    if (!savedUrl || !savedKey) {
-        showAuthAlert('Insira sua Supabase Anon Key em "Configurações do Supabase" abaixo.', 'warning');
+    if (!savedApiKey || !savedProjectId) {
+        showAuthAlert('Chaves do Firebase não configuradas. Clique em "Configurações do Firebase" abaixo.', 'warning');
         return;
     }
 
+    const firebaseConfig = {
+        apiKey: savedApiKey,
+        projectId: savedProjectId,
+        authDomain: savedAuthDomain || `${savedProjectId}.firebaseapp.com`
+    };
+
     try {
-        state.supabaseClient = window.supabase.createClient(savedUrl, savedKey);
-        
-        // Listener para mudanças de estado de autenticação (OAuth redirect)
-        state.supabaseClient.auth.onAuthStateChange((event, session) => {
-            if (session && session.user) {
-                state.currentUser = session.user;
-                showDashboardView(session.user);
-                loadDataFromSupabase();
-            } else if (event === 'SIGNED_OUT') {
+        if (!firebase.apps.length) {
+            state.firebaseApp = firebase.initializeApp(firebaseConfig);
+        } else {
+            state.firebaseApp = firebase.app();
+        }
+
+        state.db = firebase.firestore();
+
+        // Monitora estado de autenticação em tempo real
+        firebase.auth().onAuthStateChanged(user => {
+            if (user) {
+                state.currentUser = user;
+                showDashboardView(user);
+                loadDataFromFirestore();
+            } else {
+                state.currentUser = null;
                 showLoginView();
             }
         });
 
-        checkSession();
     } catch (err) {
-        console.error('Erro ao instanciar Supabase:', err);
-        showAuthAlert('Erro ao inicializar conexão com o Supabase. Verifique a URL e a Anon Key.');
+        console.error('Erro ao inicializar Firebase:', err);
+        showAuthAlert('Erro ao conectar com Firebase. Verifique as chaves fornecidas.');
     }
 }
 
-// 2. Verificação de Sessão do Usuário
-async function checkSession() {
-    if (!state.supabaseClient) return;
-
-    try {
-        const { data: { session }, error } = await state.supabaseClient.auth.getSession();
-        if (error) throw error;
-
-        if (session && session.user) {
-            state.currentUser = session.user;
-            showDashboardView(session.user);
-            loadDataFromSupabase();
-        } else {
-            showLoginView();
-        }
-    } catch (err) {
-        console.error('Erro ao verificar sessão:', err);
-        showLoginView();
-    }
-}
-
-// 3. Login com GitHub OAuth
-async function handleGitHubLogin() {
+// 2. Login com Google (1 clique)
+async function handleGoogleLogin() {
     hideAuthAlert();
-    if (!state.supabaseClient) {
-        showAuthAlert('Configure a Anon Key do Supabase antes de logar.');
+    if (!state.firebaseApp) {
+        showAuthAlert('Configure as chaves do Firebase antes de logar.');
         return;
     }
 
     try {
-        const { data, error } = await state.supabaseClient.auth.signInWithOAuth({
-            provider: 'github',
-            options: {
-                redirectTo: window.location.href.split('#')[0]
-            }
-        });
-        if (error) throw error;
+        const provider = new firebase.auth.GoogleAuthProvider();
+        await firebase.auth().signInWithPopup(provider);
     } catch (err) {
-        console.error('Erro no login com GitHub:', err);
-        showAuthAlert(`Erro ao conectar com GitHub: ${err.message}`);
+        console.error('Erro no login com Google:', err);
+        showAuthAlert(`Erro ao conectar com Google: ${err.message}`);
     }
 }
 
-// 4. Login com E-mail e Senha
+// 3. Login com E-mail e Senha
 async function handleLogin(e) {
     e.preventDefault();
     hideAuthAlert();
@@ -127,33 +116,20 @@ async function handleLogin(e) {
     const email = document.getElementById('loginEmail').value.trim();
     const password = document.getElementById('loginPassword').value;
 
-    if (!state.supabaseClient) {
-        showAuthAlert('Configure a Anon Key do Supabase antes de logar.');
+    if (!state.firebaseApp) {
+        showAuthAlert('Configure as chaves do Firebase antes de logar.');
         return;
     }
 
     setLoginLoading(true);
 
     try {
-        const { data, error } = await state.supabaseClient.auth.signInWithPassword({
-            email: email,
-            password: password
-        });
-
-        if (error) throw error;
-
-        if (data.user) {
-            state.currentUser = data.user;
-            showDashboardView(data.user);
-            loadDataFromSupabase();
-        }
+        await firebase.auth().signInWithEmailAndPassword(email, password);
     } catch (err) {
         console.error('Erro no login:', err);
         let msg = 'Erro ao efetuar login. Verifique suas credenciais.';
-        if (err.message.includes('Invalid login credentials')) {
+        if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
             msg = 'E-mail ou senha incorretos.';
-        } else if (err.message.includes('Email not confirmed')) {
-            msg = 'E-mail ainda não confirmado no Supabase.';
         } else if (err.message) {
             msg = err.message;
         }
@@ -163,10 +139,10 @@ async function handleLogin(e) {
     }
 }
 
-// 5. Logout
+// 4. Logout
 async function handleLogout() {
-    if (state.supabaseClient) {
-        await state.supabaseClient.auth.signOut();
+    if (state.firebaseApp) {
+        await firebase.auth().signOut();
     }
     state.currentUser = null;
     state.allData = [];
@@ -174,31 +150,34 @@ async function handleLogout() {
     showLoginView();
 }
 
-// 6. Carregamento dos Dados do Banco (Supabase com RLS)
-async function loadDataFromSupabase() {
+// 5. Carregamento dos Dados do Firestore (Protegido por Security Rules)
+async function loadDataFromFirestore() {
     const recordsBadge = document.getElementById('recordsBadge');
     const syncBadge = document.getElementById('lastUpdatedText');
-    recordsBadge.innerText = 'Consultando base segura...';
+    recordsBadge.innerText = 'Consultando Firestore...';
 
     try {
-        const { data, error } = await state.supabaseClient
-            .from('precos')
-            .select('*')
-            .order('data_emissao', { ascending: false });
+        const snapshot = await state.db.collection('precos').get();
 
-        if (error) throw error;
+        const docs = [];
+        snapshot.forEach(doc => {
+            const item = doc.data();
+            docs.push({
+                id: item.id || doc.id,
+                nome_emissor: item.nome_emissor || '',
+                desc_produto: item.desc_produto || '',
+                valor: parseFloat(item.valor_unidade_comercial || item.valor || 0),
+                municipio: (item.nome_municipio_emissor || item.municipio || '').toUpperCase().trim(),
+                latitude: item.latitude ? parseFloat(item.latitude) : null,
+                longitude: item.longitude ? parseFloat(item.longitude) : null,
+                distancia: item.distancia ? parseFloat(item.distancia) : 0.0,
+                data_emissao: item.data_emissao || ''
+            });
+        });
 
-        state.allData = (data || []).map(item => ({
-            id: item.id,
-            nome_emissor: item.nome_emissor,
-            desc_produto: item.desc_produto,
-            valor: parseFloat(item.valor_unidade_comercial),
-            municipio: (item.nome_municipio_emissor || '').toUpperCase().trim(),
-            latitude: item.latitude ? parseFloat(item.latitude) : null,
-            longitude: item.longitude ? parseFloat(item.longitude) : null,
-            distancia: item.distancia ? parseFloat(item.distancia) : 0.0,
-            data_emissao: item.data_emissao
-        }));
+        // Ordena por data mais recente
+        docs.sort((a, b) => new Date(b.data_emissao) - new Date(a.data_emissao));
+        state.allData = docs;
 
         if (state.allData.length > 0) {
             const latestDate = state.allData[0].data_emissao;
@@ -211,13 +190,13 @@ async function loadDataFromSupabase() {
         applyFilters();
 
     } catch (err) {
-        console.error('Falha ao consultar banco de dados:', err);
+        console.error('Falha ao consultar Firestore:', err);
         recordsBadge.innerText = 'Erro ao carregar dados';
-        showEmptyState(`Não foi possível carregar os preços: ${err.message || 'Verifique as permissões de RLS no Supabase.'}`);
+        showEmptyState(`Não foi possível carregar os preços: ${err.message || 'Verifique as Regras de Segurança (Security Rules) do Firestore.'}`);
     }
 }
 
-// 7. Atualização do Badge de Sincronização
+// 6. Atualização do Badge de Sincronização
 function updateSyncBadge(lastUpdated) {
     const badge = document.getElementById('lastUpdatedText');
     if (lastUpdated) {
@@ -232,7 +211,7 @@ function updateSyncBadge(lastUpdated) {
     }
 }
 
-// 8. Popula Cidades no Dropdown
+// 7. Popula Cidades no Dropdown
 function populateCityFilter(data) {
     const citySelect = document.getElementById('citySelect');
     const cities = [...new Set(data.map(item => item.municipio))].filter(Boolean).sort();
@@ -246,7 +225,7 @@ function populateCityFilter(data) {
     });
 }
 
-// 9. Renderização dos KPI Cards
+// 8. Renderização dos KPI Cards
 function renderKpiCards() {
     const container = document.getElementById('kpisContainer');
     container.innerHTML = '';
@@ -288,7 +267,7 @@ function renderKpiCards() {
     });
 }
 
-// 10. Cálculo de Paridade Etanol vs Gasolina (Regra dos 70%)
+// 9. Cálculo de Paridade Etanol vs Gasolina (Regra dos 70%)
 function renderParityCard() {
     const parityRatioValue = document.getElementById('parityRatioValue');
     const decisionBadge = document.getElementById('decisionBadge');
@@ -330,7 +309,7 @@ function renderParityCard() {
     }
 }
 
-// 11. Inicialização e Renderização do Mapa Leaflet
+// 10. Inicialização e Renderização do Mapa Leaflet
 function initMap() {
     if (state.map) return;
 
@@ -422,7 +401,7 @@ function renderMap() {
     }, 200);
 }
 
-// 12. Aplicação dos Filtros
+// 11. Aplicação dos Filtros
 function applyFilters() {
     let result = [...state.allData];
 
@@ -473,7 +452,7 @@ function applyFilters() {
     renderPagination();
 }
 
-// 13. Renderização dos Gráficos (Chart.js)
+// 12. Renderização dos Gráficos (Chart.js)
 function renderCharts() {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const textColor = isDark ? '#9ca3af' : '#4b5563';
@@ -666,7 +645,7 @@ function renderCharts() {
     });
 }
 
-// 14. Renderização da Tabela
+// 13. Renderização da Tabela
 function renderTable() {
     const tbody = document.getElementById('tableBody');
     const recordsBadge = document.getElementById('recordsBadge');
@@ -745,7 +724,7 @@ function renderTable() {
     });
 }
 
-// 15. Paginação
+// 14. Paginação
 function renderPagination() {
     const totalPages = Math.ceil(state.filteredData.length / state.itemsPerPage) || 1;
     const paginationInfo = document.getElementById('paginationInfo');
@@ -801,7 +780,7 @@ function renderPagination() {
     paginationControls.appendChild(nextBtn);
 }
 
-// 16. Alternância de Telas (Auth Gate vs Dashboard)
+// 15. Alternância de Telas (Auth Gate vs Dashboard)
 function showLoginView() {
     document.getElementById('authGate').style.display = 'flex';
     document.getElementById('dashboardContent').style.display = 'none';
@@ -813,7 +792,7 @@ function showDashboardView(user) {
     document.getElementById('authGate').style.display = 'none';
     document.getElementById('dashboardContent').style.display = 'block';
     document.getElementById('userProfile').style.display = 'flex';
-    document.getElementById('userEmailText').innerText = user.email || user.user_metadata?.user_name || 'Usuário GitHub';
+    document.getElementById('userEmailText').innerText = user.email || user.displayName || 'Usuário Google';
 }
 
 function showAuthAlert(msg, type = 'error') {
@@ -851,12 +830,12 @@ function showEmptyState(msg) {
     `;
 }
 
-// 17. Event Listeners
+// 16. Event Listeners
 function initEventListeners() {
-    // Botão de Login com GitHub
-    document.getElementById('btnGitHubLogin').addEventListener('click', handleGitHubLogin);
+    // Login com Google
+    document.getElementById('btnGoogleLogin').addEventListener('click', handleGoogleLogin);
 
-    // Form de Login com Email
+    // Form de Login com E-mail
     document.getElementById('loginForm').addEventListener('submit', handleLogin);
     document.getElementById('logoutBtn').addEventListener('click', handleLogout);
 
@@ -877,17 +856,22 @@ function initEventListeners() {
     });
 
     document.getElementById('saveConfigBtn').addEventListener('click', () => {
-        const url = document.getElementById('cfgSupabaseUrl').value.trim();
-        const key = document.getElementById('cfgSupabaseKey').value.trim();
-        if (!url || !key) {
-            alert('Por favor, preencha a URL e a Anon Key.');
+        const apiKey = document.getElementById('cfgApiKey').value.trim();
+        const projectId = document.getElementById('cfgProjectId').value.trim();
+        const authDomain = document.getElementById('cfgAuthDomain').value.trim();
+
+        if (!apiKey || !projectId) {
+            alert('Por favor, preencha a API Key e o Project ID.');
             return;
         }
-        localStorage.setItem('supabase_url', url);
-        localStorage.setItem('supabase_anon_key', key);
-        alert('Chaves do Supabase salvas com sucesso no seu navegador!');
+
+        localStorage.setItem('firebase_api_key', apiKey);
+        localStorage.setItem('firebase_project_id', projectId);
+        if (authDomain) localStorage.setItem('firebase_auth_domain', authDomain);
+
+        alert('Chaves do Firebase salvas no seu navegador!');
         configContent.style.display = 'none';
-        initSupabase();
+        initFirebase();
     });
 
     document.getElementById('btnRecenterMap').addEventListener('click', () => {
@@ -957,13 +941,13 @@ function initEventListeners() {
         applyFilters();
     });
 
-    document.getElementById('btnRefreshData').addEventListener('click', loadDataFromSupabase);
+    document.getElementById('btnRefreshData').addEventListener('click', loadDataFromFirestore);
     document.getElementById('btnExportCSV').addEventListener('click', exportToCSV);
     document.getElementById('btnExportJSON').addEventListener('click', exportToJSON);
     document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
 }
 
-// 18. Funções Utilitárias & Exportação
+// 17. Funções Utilitárias & Exportação
 function formatDate(dateStr) {
     try {
         const dt = new Date(dateStr);

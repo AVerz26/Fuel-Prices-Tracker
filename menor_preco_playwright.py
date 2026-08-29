@@ -7,17 +7,46 @@ import argparse
 from datetime import datetime
 import pandas as pd
 from io import StringIO
-from sqlalchemy import create_engine, text
 from playwright.sync_api import sync_playwright
 from dotenv import load_dotenv
+
+import firebase_admin
+from firebase_admin import credentials, firestore
 
 # Carrega variáveis de ambiente de um arquivo .env se existir
 load_dotenv()
 
-# Configurações de Credenciais e Conexão com Supabase / PostgreSQL
+# Configurações de Credenciais SEFAZ
 SEFAZ_USERNAME = os.getenv('SEFAZ_USERNAME', '45812131856')
 SEFAZ_PASSWORD = os.getenv('SEFAZ_PASSWORD', 'g80y5vxb8w')
-DATABASE_URL = os.getenv('DATABASE_URL', '') # Ex: postgresql+psycopg2://postgres.xxxx:senha@aws-0-sa-east-1.pooler.supabase.com:6543/postgres
+
+# Credencial do Firebase (Pode ser o caminho do arquivo JSON ou a string JSON direto)
+FIREBASE_SERVICE_ACCOUNT = os.getenv('FIREBASE_SERVICE_ACCOUNT', '')
+
+def init_firebase():
+    """Inicializa o Firebase Admin SDK."""
+    if firebase_admin._apps:
+        return firestore.client()
+
+    if not FIREBASE_SERVICE_ACCOUNT:
+        print("⚠️ Variável FIREBASE_SERVICE_ACCOUNT não configurada.")
+        return None
+
+    try:
+        # Se for caminho de arquivo existente
+        if os.path.exists(FIREBASE_SERVICE_ACCOUNT):
+            cred = credentials.Certificate(FIREBASE_SERVICE_ACCOUNT)
+        else:
+            # Se for string JSON passada via GitHub Secrets / env
+            cred_dict = json.loads(FIREBASE_SERVICE_ACCOUNT)
+            cred = credentials.Certificate(cred_dict)
+            
+        firebase_admin.initialize_app(cred)
+        print("✅ Firebase Admin SDK inicializado com sucesso!")
+        return firestore.client()
+    except Exception as e:
+        print(f"❌ Erro ao inicializar Firebase: {e}")
+        return None
 
 def head(username, password):
     print("Iniciando Playwright para capturar Token e Cookies...")
@@ -100,58 +129,48 @@ def classificar(prod):
         return "FILTRO"
     return None
 
-def salvar_supabase(df, db_url):
-    if not db_url:
-        print("⚠️ DATABASE_URL não configurada. Configure a conexão no .env ou nos GitHub Secrets.")
+def salvar_firestore(df, db):
+    if not db:
+        print("⚠️ Conexão com Firestore não disponível. Pulando salvamento.")
         return
 
-    print("Iniciando gravação segura no banco de dados (Supabase / PostgreSQL)...")
+    print(f"Iniciando gravação no Google Cloud Firestore...")
     try:
-        # Se o prefixo for postgres:// converte para postgresql+psycopg2:// para SQLAlchemy
-        if db_url.startswith("postgres://"):
-            db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
-        elif db_url.startswith("postgresql://") and not db_url.startswith("postgresql+"):
-            db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+        collection_ref = db.collection('precos')
+        
+        # Firestore permite no máximo 500 operações por batch
+        batch_size = 400
+        total_records = len(df)
+        
+        for i in range(0, total_records, batch_size):
+            batch = db.batch()
+            chunk = df.iloc[i:i + batch_size]
+            
+            for _, row in chunk.iterrows():
+                doc_id = str(row["id"])
+                doc_ref = collection_ref.document(doc_id)
+                
+                doc_data = {
+                    "id": doc_id,
+                    "nome_emissor": str(row["nomeEmissor"]).strip(),
+                    "desc_produto": str(row["descProduto"]),
+                    "valor_unidade_comercial": float(row["valorUnidadeComercial"]),
+                    "nome_municipio_emissor": str(row["nomeMunicipioEmissor"]).strip().upper(),
+                    "latitude": float(row["latitudeEstabelecimento"]) if pd.notnull(row["latitudeEstabelecimento"]) else None,
+                    "longitude": float(row["longitudeEstabelecimento"]) if pd.notnull(row["longitudeEstabelecimento"]) else None,
+                    "distancia": float(row["distancia"]) if pd.notnull(row["distancia"]) else 0.0,
+                    "data_emissao": str(row["dataEmissao_dt"]),
+                    "atualizado_em": firestore.SERVER_TIMESTAMP
+                }
+                
+                batch.set(doc_ref, doc_data, merge=True)
+            
+            batch.commit()
+            print(f"📦 Batch gravado: {min(i + batch_size, total_records)}/{total_records} documentos.")
 
-        engine = create_engine(db_url, pool_pre_ping=True)
-
-        # Query Postgres UPSERT (Supabase)
-        query = text("""
-            INSERT INTO precos (
-                id, nome_emissor, desc_produto, valor_unidade_comercial, 
-                nome_municipio_emissor, latitude, longitude, distancia, data_emissao
-            )
-            VALUES (
-                :id, :nome_emissor, :desc_produto, :valor_unidade_comercial, 
-                :nome_municipio_emissor, :latitude, :longitude, :distancia, :data_emissao
-            )
-            ON CONFLICT (id) DO UPDATE SET
-                valor_unidade_comercial = EXCLUDED.valor_unidade_comercial,
-                data_emissao = EXCLUDED.data_emissao,
-                atualizado_em = NOW();
-        """)
-
-        records_to_insert = []
-        for _, row in df.iterrows():
-            records_to_insert.append({
-                "id": str(row["id"]),
-                "nome_emissor": str(row["nomeEmissor"]),
-                "desc_produto": str(row["descProduto"]),
-                "valor_unidade_comercial": float(row["valorUnidadeComercial"]),
-                "nome_municipio_emissor": str(row["nomeMunicipioEmissor"]),
-                "latitude": float(row["latitudeEstabelecimento"]) if pd.notnull(row["latitudeEstabelecimento"]) else None,
-                "longitude": float(row["longitudeEstabelecimento"]) if pd.notnull(row["longitudeEstabelecimento"]) else None,
-                "distancia": float(row["distancia"]) if pd.notnull(row["distancia"]) else 0.0,
-                "data_emissao": row["dataEmissao_dt"]
-            })
-
-        with engine.begin() as conn:
-            for record in records_to_insert:
-                conn.execute(query, record)
-
-        print(f"✅ Gravado no Supabase com sucesso! Total de {len(records_to_insert)} registros atualizados.")
+        print(f"✅ Todos os {total_records} registros foram sincronizados com o Firestore!")
     except Exception as e:
-        print(f"❌ Erro ao salvar no banco de dados: {e}")
+        print(f"❌ Erro ao salvar no Firestore: {e}")
         raise e
 
 def job():
@@ -159,6 +178,8 @@ def job():
     print(f"Iniciando Coleta Menor Preço SEFAZ-MT: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
     print(f"==================================================")
     
+    db = init_firebase()
+
     auth_val, cookie_string = head(SEFAZ_USERNAME, SEFAZ_PASSWORD)
     
     if not auth_val:
@@ -252,11 +273,11 @@ def job():
 
     print(f"📊 Processamento concluído! Total de {len(df_clean)} registros únicos.")
 
-    # Salva diretamente no Supabase / PostgreSQL (sem salvar arquivos de dados no repositório)
-    salvar_supabase(df_clean, DATABASE_URL)
+    # Salva diretamente no Firebase Firestore
+    salvar_firestore(df_clean, db)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Scraper Menor Preço SEFAZ-MT com Supabase")
+    parser = argparse.ArgumentParser(description="Scraper Menor Preço SEFAZ-MT com Firebase Firestore")
     parser.add_argument("--loop", action="store_true", help="Executa em loop contínuo a cada 8 horas (modo local)")
     args = parser.parse_args()
 

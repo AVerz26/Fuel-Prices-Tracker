@@ -45,18 +45,18 @@ jobs:
         run: |
           playwright install --with-deps chromium
 
-      - name: 🚀 Executar Scraper e Salvar no Supabase (Nenhum dado é salvo no Git)
+      - name: 🚀 Executar Scraper e Salvar no Firebase Firestore
         env:
           SEFAZ_USERNAME: ${{ secrets.SEFAZ_USERNAME }}
           SEFAZ_PASSWORD: ${{ secrets.SEFAZ_PASSWORD }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           python menor_preco_playwright.py
 
   deploy-github-pages:
     runs-on: ubuntu-latest
     needs: scrape-to-database
-    if: always() # Garante que a interface seja publicada mesmo se o job de scrape for acionado isoladamente
+    if: always()
 
     steps:
       - name: 📥 Clonar Repositório

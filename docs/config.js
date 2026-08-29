@@ -1,11 +1,17 @@
 /**
- * Configuração de Acesso ao Supabase
+ * Configuração de Acesso ao Firebase / Google Cloud Firestore
  *
- * Projeto: xqebwizmvxkgbezaoosb
+ * Instruções:
+ * 1. Acesse o Console do Firebase (https://console.firebase.google.com)
+ * 2. Em Configurações do Projeto (Project Settings) > Geral > Seus aplicativos (Web App)
+ * 3. Copie o objeto firebaseConfig e cole abaixo (ou configure diretamente na tela de login):
  */
 
-window.SUPABASE_CONFIG = {
-    url: "https://xqebwizmvxkgbezaoosb.supabase.co",
-    // Cole sua anon key aqui (obtida em Supabase > Project Settings > API) ou configure na tela
-    anonKey: ""
+window.FIREBASE_CONFIG = {
+    apiKey: "",
+    authDomain: "",
+    projectId: "",
+    storageBucket: "",
+    messagingSenderId: "",
+    appId: ""
 };

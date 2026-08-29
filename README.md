@@ -1,117 +1,64 @@
-# ⛽ Menor Preço SEFAZ-MT | Pipeline Seguro (GitHub Actions + Supabase + GitHub Pages)
+# ⛽ Menor Preço MT | Fuel Prices Tracker (Firebase Edition)
 
-Pipeline automatizado de Web Scraping para monitoramento contínuo dos preços de combustíveis (Etanol, Gasolina Comum, Gasolina Aditivada, Diesel S10 e S500) em Mato Grosso.
-
----
-
-## 🔒 Arquitetura de Segurança de Dados
-
-- 🛡️ **Zero Dados no Repositório Git**: Nenhum dado de preço é versionado ou visível no GitHub.
-- 🔐 **Autenticação Obrigatória no GitHub Pages**: O acesso ao painel requer login com **E-mail e Senha** via **Supabase Auth**.
-- 🚦 **Row-Level Security (RLS)**: Consultas diretas não autenticadas ao banco são bloqueadas em nível de banco de dados pelo PostgreSQL.
-- 🤖 **Extração Automática com GitHub Actions**: Roda em segundo plano com Playwright Headless e salva diretamente no Supabase via credenciais seguras.
+Pipeline automatizado de coleta de preços de combustíveis da **SEFAZ-MT (Nota MT)** via **Playwright**, armazenamento em nuvem gratuito no **Google Firebase Firestore** com autenticação **Google 1-Clique** e publicação do dashboard no **GitHub Pages** com mapa interativo **Leaflet.js**, histórico temporal e análise de paridade etanol x gasolina.
 
 ---
 
-## 📁 Estrutura do Projeto
+## 🌟 Recursos Principais
 
-```
-menor-preco-sefaz-mt/
-├── .github/
-│   └── workflows/
-│       └── scrape_and_deploy.yml   # Workflow automatizado do GitHub Actions
-├── docs/                           # Aplicação Web para o GitHub Pages
-│   ├── index.html                  # Interface com Tela de Login e Painel Protegido
-│   ├── style.css                   # Estilização moderna Dark/Light com Glassmorphism
-│   ├── config.js                   # Configuração pública das chaves do Supabase
-│   └── app.js                      # Lógica de Autenticação (Supabase Auth), RLS e Charts
-├── menor_preco_playwright.py       # Scraper robusto integrado ao Supabase
-├── schema.sql                      # DDL do banco com políticas de RLS
-├── requirements.txt                # Dependências Python
-├── .gitignore                      # Protege arquivos de dados e variáveis de ambiente
-└── README.md                       # Documentação do projeto
-```
+- 🤖 **Web Scraping Automatizado**: Playwright em modo headless para 9 municípios polo de MT a cada 6 horas via GitHub Actions.
+- 🔥 **Banco de Dados Google Cloud Firestore**: Armazenamento 100% gratuito e em tempo real.
+- 🔒 **Autenticação Segura (Google / E-mail)**: Acesso aos dados bloqueado para visitantes não autorizados através de **Firestore Security Rules**.
+- 🗺️ **Mapa Interativo (Leaflet.js)**: Postos geolocalizados com marcadores coloridos por faixa de preço e botão para traçar rota no Google Maps.
+- 📈 **Gráfico de Evolução Temporal**: Histórico de preços médios por combustível.
+- ⚖️ **Card & Gráfico de Paridade Etanol / Gasolina**: Aplicação automática da **Regra dos 70%**.
+- 🛡️ **Zero Dados no Git**: Nenhum arquivo com dados sensíveis é salvo no repositório.
 
 ---
 
-## 🚀 Guia Passo a Passo de Configuração
+## 🚀 Passo a Passo de Configuração (Firebase)
 
-### 1. Criar o Banco e Ativar a Segurança no Supabase (100% Gratuito)
+### 1. Criar o Projeto no Firebase (Gratuito)
+1. Acesse o [Console do Firebase](https://console.firebase.google.com/) e crie um novo projeto (ex: `menor-preco-mt`).
+2. No menu lateral, acesse **Firestore Database** > **Criar banco de dados** (selecione o local `southamerica-east1` em SP).
+3. Na aba **Regras (Rules)** do Firestore, cole o conteúdo do arquivo [`firestore.rules`](./firestore.rules) e clique em **Publicar**.
 
-1. Acesse [supabase.com](https://supabase.com) e crie sua conta gratuita.
-2. Crie um novo projeto (ex: `menor-preco-mt`).
-3. No menu lateral, acesse **SQL Editor**, cole todo o conteúdo do arquivo [`schema.sql`](./schema.sql) e clique em **Run**.
-   *(Isso criará a tabela `precos` e ativará as políticas de segurança RLS)*.
+### 2. Ativar a Autenticação (Google Login)
+1. No menu lateral, acesse **Authentication** > **Começar**.
+2. Na aba **Sign-in method**, ative o provedor **Google** (e se desejar, **E-mail/senha**).
 
----
+### 3. Gerar a Chave para o GitHub Actions (Scraper)
+1. No console do Firebase, clique no ícone de engrenagem ⚙️ **Project Settings** (Configurações do projeto) > **Service accounts** (Contas de serviço).
+2. Clique no botão **Generate new private key** (Gerar nova chave privada).
+3. Um arquivo `.json` será baixado no seu computador.
+4. Abra esse arquivo `.json`, copie todo o seu conteúdo de texto.
+5. No seu repositório no GitHub, acesse **Settings** > **Secrets and variables** > **Actions** > **New repository secret**:
+   - Nome: `FIREBASE_SERVICE_ACCOUNT`
+   - Valor: *(Cole todo o conteúdo do arquivo .json)*
 
-### 2. Criar Usuários com Permissão de Acesso
+### 4. Configurar as Outras Secrets no GitHub
+Adicione também os segredos da SEFAZ:
+- `SEFAZ_USERNAME`: Seu CPF ou usuário da SEFAZ-MT.
+- `SEFAZ_PASSWORD`: Sua senha do portal Nota MT.
 
-No painel do Supabase:
-1. Vá em **Authentication** > **Users**.
-2. Clique em **Add user** > **Create user**.
-3. Digite o **E-mail** e a **Senha** de quem poderá acessar o painel.
-4. *Opcional: desmarque "Send invite email" se for definir a senha manualmente na hora.*
-
----
-
-### 3. Configurar as Chaves no GitHub Pages (`docs/config.js`)
-
-1. No Supabase, vá em **Project Settings** > **API**.
-2. Copie os dois valores:
-   - **Project URL** (ex: `https://xyzcompany.supabase.co`)
-   - **anon / public key** (chave pública)
-3. Abra o arquivo `docs/config.js` e cole suas chaves:
-   ```javascript
-   window.SUPABASE_CONFIG = {
-       url: "https://seu-projeto.supabase.co",
-       anonKey: "sua-anon-public-key-aqui"
-   };
-   ```
-*(Nota: a chave `anon` é pública e segura, pois o banco só libera os dados se o usuário estiver autenticado via RLS)*.
+### 5. Configurar o Web App no Frontend (`docs/config.js`)
+1. No Firebase > ⚙️ **Project Settings** > aba **Geral**, role até **Seus aplicativos** e clique no ícone **Web (</>)**.
+2. Registre o app (ex: `Menor Preço Web`) e copie as chaves do `firebaseConfig`.
+3. Cole as chaves no arquivo [`docs/config.js`](./docs/config.js) ou insira na tela de login pelo botão de configurações.
 
 ---
 
-### 4. Configurar os GitHub Secrets (Para a Coleta Automática)
-
-No seu repositório no GitHub:
-1. Vá em **Settings** > **Secrets and variables** > **Actions**.
-2. Clique em **New repository secret** e adicione:
-
-| Secret | Descrição |
-| :--- | :--- |
-| `SEFAZ_USERNAME` | Seu CPF ou usuário cadastrado na SEFAZ-MT |
-| `SEFAZ_PASSWORD` | Sua senha do portal Nota MT |
-| `DATABASE_URL` | URI de conexão do Supabase (obtida em **Project Settings** > **Database** > **Connection String URI**) |
-
----
-
-### 5. Ativar o GitHub Pages
-
-1. No repositório, vá em **Settings** > **Pages**.
-2. Em **Build and deployment** > **Source**, selecione **GitHub Actions**.
-3. Na primeira execução do workflow, a sua página segura estará no ar!
-
----
-
-### 6. Executar a Coleta Manualmente
-
-1. Vá na aba **Actions** no GitHub.
-2. Selecione **Coleta Menor Preço SEFAZ-MT e Deploy Pages**.
-3. Clique em **Run workflow**.
-4. O GitHub Actions executará o scraper com Playwright, salvará os dados direto no Supabase e publicará a aplicação.
-
----
-
-## 💻 Execução Local (Opcional)
+## 🏃 Como Rodar Localmente
 
 ```bash
 # 1. Instalar dependências
 pip install -r requirements.txt
-
-# 2. Instalar Chromium do Playwright
 playwright install chromium
 
-# 3. Executar uma coleta
+# 2. Executar coleta
 python menor_preco_playwright.py
+
+# 3. Testar a página web
+python -m http.server 8000 --directory docs
 ```
+Abra `http://localhost:8000` no seu navegador.

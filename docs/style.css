@@ -1,6 +1,6 @@
 /* ==========================================================
    Menor Preço MT - Modern Design System & Stylesheet
-   Com Tela de Autenticação (GitHub OAuth / E-mail), Mapa Leaflet, Evolução Temporal e Paridade
+   Com Tela de Autenticação (Google / E-mail), Mapa Leaflet, Evolução Temporal e Paridade
    ========================================================== */
 
 :root {
@@ -284,7 +284,7 @@ body {
 }
 
 /* ==========================================================
-   Auth Gate Screen (Login & GitHub OAuth)
+   Auth Gate Screen (Login & Google OAuth)
    ========================================================== */
 .auth-gate-section {
     display: flex;
@@ -344,11 +344,11 @@ body {
     font-size: 0.85rem;
 }
 
-/* Botão GitHub OAuth */
-.btn-github {
-    background: #24292f;
-    color: #ffffff;
-    border: 1px solid #374151;
+/* Botão Google Login */
+.btn-google {
+    background: #ffffff;
+    color: #1f2937;
+    border: 1px solid #d1d5db;
     padding: 0.8rem 1.25rem;
     border-radius: var(--radius-md);
     font-size: 0.95rem;
@@ -363,11 +363,16 @@ body {
     box-shadow: var(--shadow-sm);
 }
 
-.btn-github:hover {
-    background: #1b1f24;
-    border-color: #4b5563;
+.btn-google:hover {
+    background: #f9fafb;
+    border-color: #9ca3af;
     transform: translateY(-1px);
     box-shadow: var(--shadow-md);
+}
+
+.btn-google i {
+    color: #ea4335;
+    font-size: 1.1rem;
 }
 
 .auth-divider {
@@ -1021,7 +1026,7 @@ body {
 
 /* ==========================================================
    Analytics Charts Section
-   ========================================================= */
+   ========================================================== */
 .charts-section {
     display: grid;
     grid-template-columns: 1fr 1fr;
