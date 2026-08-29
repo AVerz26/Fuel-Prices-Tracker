@@ -1,0 +1,28 @@
+# Variáveis de ambiente e segredos locais
+.env
+.env.local
+*.env
+
+# Cache e execução Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Dados locais
+docs/data/
+data/
+*.json
+*.csv
+*.db
+*.sqlite3
+
+# Ambientes virtuais
+venv/
+.venv/
+env/
+
+# Logs e IDEs
+*.log
+.vscode/
+.idea/

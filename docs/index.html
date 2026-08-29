@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Menor Preço MT | Painel Seguro & Mapa</title>
+    <meta name="description" content="Acompanhe os menores preços de combustíveis coletados da SEFAZ-MT com mapa interativo, evolução histórica e paridade etanol/gasolina.">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Leaflet CSS & JS for Interactive Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Supabase JS Client CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- Supabase Project Config -->
+    <script src="config.js"></script>
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Header / Navbar -->
+    <header class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <div class="brand-icon">
+                    <i class="fa-solid fa-gas-pump"></i>
+                </div>
+                <div class="brand-text">
+                    <span class="brand-title">MENOR PREÇO <strong>MT</strong></span>
+                    <span class="brand-badge"><span class="pulse-dot"></span> Protegido (RLS)</span>
+                </div>
+            </div>
+
+            <div class="nav-actions">
+                <div class="last-sync-badge" id="lastSyncBadge" title="Status da sincronização">
+                    <i class="fa-solid fa-shield-halved"></i>
+                    <span id="lastUpdatedText">Aguardando login...</span>
+                </div>
+
+                <!-- User Profile / Logout (Visível após autenticação) -->
+                <div class="user-profile" id="userProfile" style="display: none;">
+                    <div class="user-avatar" id="userAvatar">
+                        <i class="fa-solid fa-user-check"></i>
+                    </div>
+                    <span class="user-email" id="userEmailText">usuario@exemplo.com</span>
+                    <button id="logoutBtn" class="btn-logout" title="Encerrar sessão">
+                        <i class="fa-solid fa-right-from-bracket"></i> Sair
+                    </button>
+                </div>
+                
+                <button id="themeToggleBtn" class="action-btn" title="Alternar tema Claro/Escuro" aria-label="Alternar Tema">
+                    <i class="fa-solid fa-moon" id="themeIcon"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="main-content">
+        <!-- 1. TELA DE AUTENTICAÇÃO (Visível quando deslogado) -->
+        <section class="auth-gate-section" id="authGate">
+            <div class="auth-card">
+                <div class="auth-header">
+                    <div class="auth-icon-circle">
+                        <i class="fa-solid fa-lock"></i>
+                    </div>
+                    <h2>Acesso Restrito</h2>
+                    <p>Faça login com sua conta autorizada para visualizar os preços, mapa e análises.</p>
+                </div>
+
+                <form id="loginForm" class="auth-form">
+                    <div class="auth-alert error" id="authAlert" style="display: none;">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                        <span id="authAlertMsg">E-mail ou senha incorretos.</span>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="loginEmail"><i class="fa-solid fa-envelope"></i> E-mail</label>
+                        <input type="email" id="loginEmail" placeholder="seu-email@exemplo.com" required autocomplete="email">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="loginPassword"><i class="fa-solid fa-key"></i> Senha</label>
+                        <div class="password-input-wrapper">
+                            <input type="password" id="loginPassword" placeholder="••••••••" required autocomplete="current-password">
+                            <button type="button" id="togglePasswordBtn" class="btn-show-pass" title="Mostrar/Ocultar senha">
+                                <i class="fa-solid fa-eye" id="eyeIcon"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <button type="submit" id="loginSubmitBtn" class="btn-primary auth-submit-btn">
+                        <span id="btnSubmitText"><i class="fa-solid fa-arrow-right-to-bracket"></i> Entrar no Painel</span>
+                        <span id="btnSubmitSpinner" class="spinner" style="display: none;"></span>
+                    </button>
+                </form>
+
+                <!-- Configuração de Conexão Supabase (Expansível) -->
+                <div class="config-accordion">
+                    <button type="button" class="accordion-toggle" id="configToggleBtn">
+                        <i class="fa-solid fa-gear"></i> Configurar Chaves do Supabase <i class="fa-solid fa-chevron-down chevron"></i>
+                    </button>
+                    <div class="accordion-content" id="configContent" style="display: none;">
+                        <p class="config-desc">Insira a URL e a Anon Key do seu projeto Supabase (salvo no navegador):</p>
+                        <div class="form-group">
+                            <label for="cfgSupabaseUrl">Supabase Project URL</label>
+                            <input type="url" id="cfgSupabaseUrl" placeholder="https://xyz.supabase.co">
+                        </div>
+                        <div class="form-group">
+                            <label for="cfgSupabaseKey">Supabase Anon Key (Public Key)</label>
+                            <input type="text" id="cfgSupabaseKey" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6...">
+                        </div>
+                        <button type="button" id="saveConfigBtn" class="btn-secondary btn-full">
+                            <i class="fa-solid fa-floppy-disk"></i> Salvar Chaves
+                        </button>
+                    </div>
+                </div>
+
+                <div class="auth-footer-notice">
+                    <i class="fa-solid fa-shield-check"></i> Protegido com <strong>Row-Level Security (RLS)</strong> no PostgreSQL.
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. PAINEL DE DADOS PROTEGIDO (Visível após login) -->
+        <div id="dashboardContent" style="display: none;">
+            <!-- Hero Section -->
+            <section class="hero-section">
+                <div class="hero-text">
+                    <span class="hero-tag"><i class="fa-solid fa-bolt"></i> Extração Automatizada SEFAZ-MT</span>
+                    <h1>Monitor de Preços de Combustíveis em Mato Grosso</h1>
+                    <p>Mapeamento geográfico interativo, evolução temporal e cálculo de paridade etanol x gasolina em tempo real.</p>
+                </div>
+            </section>
+
+            <!-- Card de Paridade Etanol vs Gasolina (Regra dos 70%) -->
+            <section class="parity-section">
+                <div class="parity-card" id="parityCard">
+                    <div class="parity-header">
+                        <div class="parity-icon">
+                            <i class="fa-solid fa-scale-balanced"></i>
+                        </div>
+                        <div>
+                            <h3>Paridade Etanol vs Gasolina (Regra dos 70%)</h3>
+                            <p class="parity-sub" id="parityLocation">Calculado com base nos preços médios atuais</p>
+                        </div>
+                    </div>
+                    <div class="parity-body">
+                        <div class="parity-metric">
+                            <span class="parity-ratio" id="parityRatioValue">--%</span>
+                            <span class="parity-label">Relação de Preço</span>
+                        </div>
+                        <div class="parity-decision" id="parityDecision">
+                            <div class="decision-badge" id="decisionBadge">Analisando dados...</div>
+                            <p class="decision-desc" id="decisionDesc">Aguardando dados para recomendação.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- KPI Cards Grid -->
+            <section class="kpis-section">
+                <div class="kpis-grid" id="kpisContainer">
+                    <div class="kpi-card skeleton"></div>
+                    <div class="kpi-card skeleton"></div>
+                    <div class="kpi-card skeleton"></div>
+                    <div class="kpi-card skeleton"></div>
+                    <div class="kpi-card skeleton"></div>
+                </div>
+            </section>
+
+            <!-- MAPA INTERATIVO LEAFLET -->
+            <section class="map-section">
+                <div class="map-card">
+                    <div class="map-header">
+                        <div class="map-title-box">
+                            <h2><i class="fa-solid fa-map-location-dot"></i> Mapa de Postos e Menores Preços</h2>
+                            <p class="map-subtitle">Visualize a distribuição geográfica dos postos com identificação por faixa de preço</p>
+                        </div>
+                        <div class="map-actions">
+                            <button id="btnRecenterMap" class="btn-secondary" title="Centralizar mapa na visualização">
+                                <i class="fa-solid fa-crosshairs"></i> Centralizar
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Leaflet Map Container -->
+                    <div class="map-wrapper">
+                        <div id="map" class="map-canvas"></div>
+                        
+                        <!-- Legenda Flutuante do Mapa -->
+                        <div class="map-legend">
+                            <h4><i class="fa-solid fa-layer-group"></i> Faixa de Preço</h4>
+                            <div class="legend-item">
+                                <span class="legend-color color-cheapest"></span>
+                                <span>Mais Baratos (&lt; 25%)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color color-medium"></span>
+                                <span>Preço Médio (25% - 75%)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color color-expensive"></span>
+                                <span>Preço Mais Alto (&gt; 75%)</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ANALYTICS CHARTS SECTION -->
+            <section class="charts-section">
+                <!-- Gráfico 1: Evolução de Preços ao Longo do Tempo -->
+                <div class="chart-card chart-card-wide">
+                    <div class="chart-header">
+                        <div>
+                            <h3><i class="fa-solid fa-chart-line"></i> Evolução de Preços ao Longo do Tempo</h3>
+                            <p class="chart-subtitle">Histórico diário do preço médio por tipo de combustível</p>
+                        </div>
+                    </div>
+                    <div class="chart-container chart-container-large">
+                        <canvas id="priceEvolutionChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Gráfico 2: Paridade Etanol vs Gasolina ao Longo do Tempo -->
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <div>
+                            <h3><i class="fa-solid fa-percent"></i> Histórico da Relação Etanol / Gasolina</h3>
+                            <p class="chart-subtitle">Valores abaixo da linha de 70% indicam vantagem para Etanol</p>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="parityChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Gráfico 3: Menor Preço vs Média por Cidade -->
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <div>
+                            <h3><i class="fa-solid fa-chart-simple"></i> Menor Preço vs Média por Cidade</h3>
+                            <p class="chart-subtitle">Comparativo de valores por município para o combustível selecionado</p>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="cityComparisonChart"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Filter & Search Controls -->
+            <section class="filter-section">
+                <div class="filter-panel">
+                    <div class="filter-row-top">
+                        <!-- Fuel Type Pills -->
+                        <div class="fuel-pills" id="fuelPills">
+                            <button class="pill-btn active" data-fuel="ALL">Todos os Combustíveis</button>
+                            <button class="pill-btn" data-fuel="ETANOL"><i class="fa-solid fa-leaf"></i> Etanol</button>
+                            <button class="pill-btn" data-fuel="GASOLINA COMUM"><i class="fa-solid fa-gas-pump"></i> Gasolina Comum</button>
+                            <button class="pill-btn" data-fuel="GASOLINA ADITIVADA"><i class="fa-solid fa-fire"></i> Gasolina Aditivada</button>
+                            <button class="pill-btn" data-fuel="DIESEL S10"><i class="fa-solid fa-truck"></i> Diesel S10</button>
+                            <button class="pill-btn" data-fuel="DIESEL S500"><i class="fa-solid fa-truck-moving"></i> Diesel S500</button>
+                        </div>
+
+                        <!-- Export Actions -->
+                        <div class="export-actions">
+                            <button id="btnExportCSV" class="btn-secondary" title="Exportar dados filtrados em CSV">
+                                <i class="fa-solid fa-file-csv"></i> CSV
+                            </button>
+                            <button id="btnExportJSON" class="btn-secondary" title="Exportar dados filtrados em JSON">
+                                <i class="fa-solid fa-file-code"></i> JSON
+                            </button>
+                            <button id="btnRefreshData" class="btn-secondary" title="Recarregar dados do banco">
+                                <i class="fa-solid fa-rotate"></i> Atualizar
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="filter-row-bottom">
+                        <!-- Search Input -->
+                        <div class="search-box">
+                            <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                            <input type="text" id="searchInput" placeholder="Buscar por posto, município ou CNPJ..." autocomplete="off">
+                            <button id="clearSearchBtn" class="clear-search-btn" title="Limpar busca"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+
+                        <!-- City Filter Dropdown -->
+                        <div class="select-wrapper">
+                            <i class="fa-solid fa-location-dot select-icon"></i>
+                            <select id="citySelect">
+                                <option value="ALL">Todas as Cidades</option>
+                            </select>
+                        </div>
+
+                        <!-- Sort Dropdown -->
+                        <div class="select-wrapper">
+                            <i class="fa-solid fa-arrow-down-short-wide select-icon"></i>
+                            <select id="sortSelect">
+                                <option value="price-asc">Menor Preço (R$)</option>
+                                <option value="price-desc">Maior Preço (R$)</option>
+                                <option value="date-desc">Mais Recentes</option>
+                                <option value="distance-asc">Menor Distância (km)</option>
+                                <option value="name-asc">Nome do Posto (A-Z)</option>
+                            </select>
+                        </div>
+
+                        <!-- Reset Button -->
+                        <button id="resetFiltersBtn" class="btn-reset" title="Limpar todos os filtros">
+                            <i class="fa-solid fa-rotate-left"></i> Limpar
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Data Table Section -->
+            <section class="table-section">
+                <div class="table-card">
+                    <div class="table-card-header">
+                        <div class="table-info">
+                            <h2>Lista de Preços Detalhada</h2>
+                            <span class="records-badge" id="recordsBadge">Carregando registros...</span>
+                        </div>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="data-table" id="pricesTable">
+                            <thead>
+                                <tr>
+                                    <th>Status</th>
+                                    <th>Posto / Emissor</th>
+                                    <th>Combustível</th>
+                                    <th>Preço Unitário</th>
+                                    <th>Município</th>
+                                    <th>Distância</th>
+                                    <th>Última Emissão</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableBody">
+                                <!-- Injetado dinamicamente via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination -->
+                    <div class="pagination-wrapper">
+                        <div class="pagination-info" id="paginationInfo">
+                            Página 1 de 1
+                        </div>
+                        <div class="pagination-controls" id="paginationControls">
+                            <!-- Botões de paginação -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-container">
+            <p><strong>Menor Preço MT</strong> &copy; 2026. Acesso Seguro Autenticado.</p>
+            <p class="footer-sub">Pipeline automatizado via GitHub Actions conectado ao Supabase com mapa interativo e análise de paridade.</p>
+        </div>
+    </footer>
+
+    <!-- JavaScript Principal -->
+    <script src="app.js"></script>
+</body>
+</html>
