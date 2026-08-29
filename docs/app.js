@@ -1,6 +1,6 @@
 /**
  * Menor Preço MT - Interactive Dashboard Logic
- * Autenticação via Supabase Auth + Mapa Leaflet + Evolução Temporal + Paridade 70%
+ * Autenticação via Supabase Auth (GitHub OAuth / E-mail) + Mapa Leaflet + Evolução Temporal + Paridade 70%
  */
 
 // Estado Global da Aplicação
@@ -33,8 +33,7 @@ const FUEL_COLORS = {
     'DIESEL S500': { bg: 'rgba(139, 92, 246, 0.2)', border: '#8b5cf6', class: 'diesel-s500', icon: 'fa-truck-moving' }
 };
 
-// Coordenadas padrão para o centro de Mato Grosso
-const DEFAULT_MT_CENTER = [-15.552, -54.283]; // Primavera do Leste / Região Central
+const DEFAULT_MT_CENTER = [-15.552, -54.283]; // Centro de MT (Primavera do Leste)
 
 // Inicialização da Aplicação
 document.addEventListener('DOMContentLoaded', () => {
@@ -45,19 +44,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // 1. Inicialização do Supabase
 function initSupabase() {
-    const savedUrl = localStorage.getItem('supabase_url') || (window.SUPABASE_CONFIG && window.SUPABASE_CONFIG.url);
+    const savedUrl = localStorage.getItem('supabase_url') || (window.SUPABASE_CONFIG && window.SUPABASE_CONFIG.url) || "https://xqebwizmvxkgbezaoosb.supabase.co";
     const savedKey = localStorage.getItem('supabase_anon_key') || (window.SUPABASE_CONFIG && window.SUPABASE_CONFIG.anonKey);
 
     if (savedUrl) document.getElementById('cfgSupabaseUrl').value = savedUrl;
     if (savedKey) document.getElementById('cfgSupabaseKey').value = savedKey;
 
     if (!savedUrl || !savedKey) {
-        showAuthAlert('Chaves do Supabase não configuradas. Clique em "Configurar Chaves" abaixo.', 'warning');
+        showAuthAlert('Insira sua Supabase Anon Key em "Configurações do Supabase" abaixo.', 'warning');
         return;
     }
 
     try {
         state.supabaseClient = window.supabase.createClient(savedUrl, savedKey);
+        
+        // Listener para mudanças de estado de autenticação (OAuth redirect)
+        state.supabaseClient.auth.onAuthStateChange((event, session) => {
+            if (session && session.user) {
+                state.currentUser = session.user;
+                showDashboardView(session.user);
+                loadDataFromSupabase();
+            } else if (event === 'SIGNED_OUT') {
+                showLoginView();
+            }
+        });
+
         checkSession();
     } catch (err) {
         console.error('Erro ao instanciar Supabase:', err);
@@ -86,7 +97,29 @@ async function checkSession() {
     }
 }
 
-// 3. Login com E-mail e Senha
+// 3. Login com GitHub OAuth
+async function handleGitHubLogin() {
+    hideAuthAlert();
+    if (!state.supabaseClient) {
+        showAuthAlert('Configure a Anon Key do Supabase antes de logar.');
+        return;
+    }
+
+    try {
+        const { data, error } = await state.supabaseClient.auth.signInWithOAuth({
+            provider: 'github',
+            options: {
+                redirectTo: window.location.href.split('#')[0]
+            }
+        });
+        if (error) throw error;
+    } catch (err) {
+        console.error('Erro no login com GitHub:', err);
+        showAuthAlert(`Erro ao conectar com GitHub: ${err.message}`);
+    }
+}
+
+// 4. Login com E-mail e Senha
 async function handleLogin(e) {
     e.preventDefault();
     hideAuthAlert();
@@ -95,7 +128,7 @@ async function handleLogin(e) {
     const password = document.getElementById('loginPassword').value;
 
     if (!state.supabaseClient) {
-        showAuthAlert('Configure a URL e a Anon Key do Supabase antes de logar.');
+        showAuthAlert('Configure a Anon Key do Supabase antes de logar.');
         return;
     }
 
@@ -130,7 +163,7 @@ async function handleLogin(e) {
     }
 }
 
-// 4. Logout
+// 5. Logout
 async function handleLogout() {
     if (state.supabaseClient) {
         await state.supabaseClient.auth.signOut();
@@ -141,7 +174,7 @@ async function handleLogout() {
     showLoginView();
 }
 
-// 5. Carregamento dos Dados do Banco (Supabase com RLS)
+// 6. Carregamento dos Dados do Banco (Supabase com RLS)
 async function loadDataFromSupabase() {
     const recordsBadge = document.getElementById('recordsBadge');
     const syncBadge = document.getElementById('lastUpdatedText');
@@ -184,7 +217,7 @@ async function loadDataFromSupabase() {
     }
 }
 
-// 6. Atualização do Badge de Sincronização
+// 7. Atualização do Badge de Sincronização
 function updateSyncBadge(lastUpdated) {
     const badge = document.getElementById('lastUpdatedText');
     if (lastUpdated) {
@@ -199,7 +232,7 @@ function updateSyncBadge(lastUpdated) {
     }
 }
 
-// 7. Popula Cidades no Dropdown
+// 8. Popula Cidades no Dropdown
 function populateCityFilter(data) {
     const citySelect = document.getElementById('citySelect');
     const cities = [...new Set(data.map(item => item.municipio))].filter(Boolean).sort();
@@ -213,7 +246,7 @@ function populateCityFilter(data) {
     });
 }
 
-// 8. Renderização dos KPI Cards
+// 9. Renderização dos KPI Cards
 function renderKpiCards() {
     const container = document.getElementById('kpisContainer');
     container.innerHTML = '';
@@ -255,14 +288,13 @@ function renderKpiCards() {
     });
 }
 
-// 9. Cálculo de Paridade Etanol vs Gasolina (Regra dos 70%)
+// 10. Cálculo de Paridade Etanol vs Gasolina (Regra dos 70%)
 function renderParityCard() {
     const parityRatioValue = document.getElementById('parityRatioValue');
     const decisionBadge = document.getElementById('decisionBadge');
     const decisionDesc = document.getElementById('decisionDesc');
     const parityLocation = document.getElementById('parityLocation');
 
-    // Filtra dados da cidade atual (ou todos)
     const baseData = state.currentCity === 'ALL' ? state.allData : state.allData.filter(d => d.municipio === state.currentCity);
     
     const etanolItems = baseData.filter(d => d.desc_produto === 'ETANOL');
@@ -298,7 +330,7 @@ function renderParityCard() {
     }
 }
 
-// 10. Inicialização e Renderização do Mapa Leaflet
+// 11. Inicialização e Renderização do Mapa Leaflet
 function initMap() {
     if (state.map) return;
 
@@ -308,7 +340,6 @@ function initMap() {
         scrollWheelZoom: true
     });
 
-    // Camada OpenStreetMap padrão
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         maxZoom: 19
@@ -319,11 +350,8 @@ function initMap() {
 
 function renderMap() {
     initMap();
-
-    // Limpa marcadores anteriores
     state.markersGroup.clearLayers();
 
-    // Filtra postos que possuem latitude e longitude válidas
     const validStations = state.filteredData.filter(d => d.latitude && d.longitude && !isNaN(d.latitude) && !isNaN(d.longitude));
 
     if (validStations.length === 0) {
@@ -331,7 +359,6 @@ function renderMap() {
         return;
     }
 
-    // Calcula percentis de preço para colorir os pinos
     const prices = validStations.map(d => d.valor).sort((a, b) => a - b);
     const p25 = prices[Math.floor(prices.length * 0.25)] || prices[0];
     const p75 = prices[Math.floor(prices.length * 0.75)] || prices[prices.length - 1];
@@ -390,13 +417,12 @@ function renderMap() {
         state.map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
     }
 
-    // Redesenha mapa caso o layout tenha mudado
     setTimeout(() => {
-        state.map.invalidateSize();
+        if (state.map) state.map.invalidateSize();
     }, 200);
 }
 
-// 11. Aplicação dos Filtros
+// 12. Aplicação dos Filtros
 function applyFilters() {
     let result = [...state.allData];
 
@@ -447,16 +473,13 @@ function applyFilters() {
     renderPagination();
 }
 
-// 12. Renderização dos Gráficos (Chart.js)
+// 13. Renderização dos Gráficos (Chart.js)
 function renderCharts() {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const textColor = isDark ? '#9ca3af' : '#4b5563';
     const gridColor = isDark ? '#2a3449' : '#e5e7eb';
 
-    // -------------------------------------------------------------
-    // Gráfico 1: Evolução de Preços ao Longo do Tempo (Time Series)
-    // -------------------------------------------------------------
-    // Agrupa dados por data (YYYY-MM-DD) e tipo de combustível
+    // Gráfico 1: Evolução Temporal
     const datesSet = new Set();
     const timeSeriesData = {
         'ETANOL': {},
@@ -546,23 +569,15 @@ function renderCharts() {
             responsive: true,
             maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: { labels: { color: textColor } }
-            },
+            plugins: { legend: { labels: { color: textColor } } },
             scales: {
                 x: { ticks: { color: textColor }, grid: { color: gridColor } },
-                y: {
-                    ticks: { color: textColor },
-                    grid: { color: gridColor },
-                    title: { display: true, text: 'Preço Médio (R$)', color: textColor }
-                }
+                y: { ticks: { color: textColor }, grid: { color: gridColor }, title: { display: true, text: 'Preço Médio (R$)', color: textColor } }
             }
         }
     });
 
-    // -------------------------------------------------------------
-    // Gráfico 2: Paridade Etanol vs Gasolina (%) ao Longo do Tempo
-    // -------------------------------------------------------------
+    // Gráfico 2: Paridade
     const parityValues = sortedDates.map(d => {
         const ets = timeSeriesData['ETANOL'][d];
         const gas = timeSeriesData['GASOLINA COMUM'][d];
@@ -606,30 +621,18 @@ function renderCharts() {
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: {
-                legend: { labels: { color: textColor } }
-            },
+            plugins: { legend: { labels: { color: textColor } } },
             scales: {
                 x: { ticks: { color: textColor }, grid: { color: gridColor } },
-                y: {
-                    ticks: { color: textColor },
-                    grid: { color: gridColor },
-                    title: { display: true, text: 'Relação (%)', color: textColor },
-                    suggestedMin: 60,
-                    suggestedMax: 80
-                }
+                y: { ticks: { color: textColor }, grid: { color: gridColor }, title: { display: true, text: 'Relação (%)', color: textColor }, suggestedMin: 60, suggestedMax: 80 }
             }
         }
     });
 
-    // -------------------------------------------------------------
-    // Gráfico 3: Menor Preço vs Média por Cidade
-    // -------------------------------------------------------------
+    // Gráfico 3: Cidade
     const cityData = {};
     state.filteredData.forEach(d => {
-        if (!cityData[d.municipio]) {
-            cityData[d.municipio] = [];
-        }
+        if (!cityData[d.municipio]) cityData[d.municipio] = [];
         cityData[d.municipio].push(d.valor);
     });
 
@@ -647,18 +650,8 @@ function renderCharts() {
         data: {
             labels: cities,
             datasets: [
-                {
-                    label: 'Menor Preço (R$)',
-                    data: minPrices,
-                    backgroundColor: '#10b981',
-                    borderRadius: 6
-                },
-                {
-                    label: 'Preço Médio (R$)',
-                    data: avgPrices,
-                    backgroundColor: '#3b82f6',
-                    borderRadius: 6
-                }
+                { label: 'Menor Preço (R$)', data: minPrices, backgroundColor: '#10b981', borderRadius: 6 },
+                { label: 'Preço Médio (R$)', data: avgPrices, backgroundColor: '#3b82f6', borderRadius: 6 }
             ]
         },
         options: {
@@ -673,7 +666,7 @@ function renderCharts() {
     });
 }
 
-// 13. Renderização da Tabela
+// 14. Renderização da Tabela
 function renderTable() {
     const tbody = document.getElementById('tableBody');
     const recordsBadge = document.getElementById('recordsBadge');
@@ -752,7 +745,7 @@ function renderTable() {
     });
 }
 
-// 14. Paginação
+// 15. Paginação
 function renderPagination() {
     const totalPages = Math.ceil(state.filteredData.length / state.itemsPerPage) || 1;
     const paginationInfo = document.getElementById('paginationInfo');
@@ -808,7 +801,7 @@ function renderPagination() {
     paginationControls.appendChild(nextBtn);
 }
 
-// 15. Alternância de Telas (Auth Gate vs Dashboard)
+// 16. Alternância de Telas (Auth Gate vs Dashboard)
 function showLoginView() {
     document.getElementById('authGate').style.display = 'flex';
     document.getElementById('dashboardContent').style.display = 'none';
@@ -820,7 +813,7 @@ function showDashboardView(user) {
     document.getElementById('authGate').style.display = 'none';
     document.getElementById('dashboardContent').style.display = 'block';
     document.getElementById('userProfile').style.display = 'flex';
-    document.getElementById('userEmailText').innerText = user.email || 'Usuário Autenticado';
+    document.getElementById('userEmailText').innerText = user.email || user.user_metadata?.user_name || 'Usuário GitHub';
 }
 
 function showAuthAlert(msg, type = 'error') {
@@ -858,8 +851,12 @@ function showEmptyState(msg) {
     `;
 }
 
-// 16. Event Listeners
+// 17. Event Listeners
 function initEventListeners() {
+    // Botão de Login com GitHub
+    document.getElementById('btnGitHubLogin').addEventListener('click', handleGitHubLogin);
+
+    // Form de Login com Email
     document.getElementById('loginForm').addEventListener('submit', handleLogin);
     document.getElementById('logoutBtn').addEventListener('click', handleLogout);
 
@@ -893,7 +890,6 @@ function initEventListeners() {
         initSupabase();
     });
 
-    // Centralizar Mapa
     document.getElementById('btnRecenterMap').addEventListener('click', () => {
         if (state.map && state.markersGroup) {
             const layers = state.markersGroup.getLayers();
@@ -906,7 +902,6 @@ function initEventListeners() {
         }
     });
 
-    // Alternador de Combustível (Pills)
     const pills = document.querySelectorAll('#fuelPills .pill-btn');
     pills.forEach(pill => {
         pill.addEventListener('click', () => {
@@ -968,7 +963,7 @@ function initEventListeners() {
     document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
 }
 
-// 17. Funções Utilitárias & Exportação
+// 18. Funções Utilitárias & Exportação
 function formatDate(dateStr) {
     try {
         const dt = new Date(dateStr);

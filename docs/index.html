@@ -78,24 +78,33 @@
                         <i class="fa-solid fa-lock"></i>
                     </div>
                     <h2>Acesso Restrito</h2>
-                    <p>Faça login com sua conta autorizada para visualizar os preços, mapa e análises.</p>
+                    <p>Entre com sua conta autorizada para visualizar o mapa e as análises em tempo real.</p>
+                </div>
+
+                <div class="auth-alert error" id="authAlert" style="display: none;">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span id="authAlertMsg">E-mail ou senha incorretos.</span>
+                </div>
+
+                <!-- Botão Login com GitHub (OAuth direto) -->
+                <button type="button" id="btnGitHubLogin" class="btn-github">
+                    <i class="fa-brands fa-github"></i> Entrar com GitHub
+                </button>
+
+                <div class="auth-divider">
+                    <span>ou com e-mail e senha</span>
                 </div>
 
                 <form id="loginForm" class="auth-form">
-                    <div class="auth-alert error" id="authAlert" style="display: none;">
-                        <i class="fa-solid fa-triangle-exclamation"></i>
-                        <span id="authAlertMsg">E-mail ou senha incorretos.</span>
-                    </div>
-
                     <div class="form-group">
                         <label for="loginEmail"><i class="fa-solid fa-envelope"></i> E-mail</label>
-                        <input type="email" id="loginEmail" placeholder="seu-email@exemplo.com" required autocomplete="email">
+                        <input type="email" id="loginEmail" placeholder="seu-email@exemplo.com" autocomplete="email">
                     </div>
 
                     <div class="form-group">
                         <label for="loginPassword"><i class="fa-solid fa-key"></i> Senha</label>
                         <div class="password-input-wrapper">
-                            <input type="password" id="loginPassword" placeholder="••••••••" required autocomplete="current-password">
+                            <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password">
                             <button type="button" id="togglePasswordBtn" class="btn-show-pass" title="Mostrar/Ocultar senha">
                                 <i class="fa-solid fa-eye" id="eyeIcon"></i>
                             </button>
@@ -103,7 +112,7 @@
                     </div>
 
                     <button type="submit" id="loginSubmitBtn" class="btn-primary auth-submit-btn">
-                        <span id="btnSubmitText"><i class="fa-solid fa-arrow-right-to-bracket"></i> Entrar no Painel</span>
+                        <span id="btnSubmitText"><i class="fa-solid fa-arrow-right-to-bracket"></i> Entrar com E-mail</span>
                         <span id="btnSubmitSpinner" class="spinner" style="display: none;"></span>
                     </button>
                 </form>
@@ -111,13 +120,13 @@
                 <!-- Configuração de Conexão Supabase (Expansível) -->
                 <div class="config-accordion">
                     <button type="button" class="accordion-toggle" id="configToggleBtn">
-                        <i class="fa-solid fa-gear"></i> Configurar Chaves do Supabase <i class="fa-solid fa-chevron-down chevron"></i>
+                        <i class="fa-solid fa-gear"></i> Configurações do Supabase <i class="fa-solid fa-chevron-down chevron"></i>
                     </button>
                     <div class="accordion-content" id="configContent" style="display: none;">
-                        <p class="config-desc">Insira a URL e a Anon Key do seu projeto Supabase (salvo no navegador):</p>
+                        <p class="config-desc">Insira a Anon Key do projeto <code>xqebwizmvxkgbezaoosb</code>:</p>
                         <div class="form-group">
-                            <label for="cfgSupabaseUrl">Supabase Project URL</label>
-                            <input type="url" id="cfgSupabaseUrl" placeholder="https://xyz.supabase.co">
+                            <label for="cfgSupabaseUrl">Supabase URL</label>
+                            <input type="url" id="cfgSupabaseUrl" value="https://xqebwizmvxkgbezaoosb.supabase.co">
                         </div>
                         <div class="form-group">
                             <label for="cfgSupabaseKey">Supabase Anon Key (Public Key)</label>

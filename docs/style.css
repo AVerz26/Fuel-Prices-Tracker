@@ -1,6 +1,6 @@
 /* ==========================================================
    Menor Preço MT - Modern Design System & Stylesheet
-   Com Tela de Autenticação, Mapa Leaflet, Evolução Temporal e Paridade
+   Com Tela de Autenticação (GitHub OAuth / E-mail), Mapa Leaflet, Evolução Temporal e Paridade
    ========================================================== */
 
 :root {
@@ -284,7 +284,7 @@ body {
 }
 
 /* ==========================================================
-   Auth Gate Screen (Login)
+   Auth Gate Screen (Login & GitHub OAuth)
    ========================================================== */
 .auth-gate-section {
     display: flex;
@@ -304,7 +304,7 @@ body {
     box-shadow: var(--shadow-lg);
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1.25rem;
     animation: fadeIn 0.4s ease-out;
 }
 
@@ -328,12 +328,12 @@ body {
     align-items: center;
     justify-content: center;
     font-size: 1.5rem;
-    margin: 0 auto 1rem;
+    margin: 0 auto 0.75rem;
 }
 
 .auth-header h2 {
     font-family: var(--font-heading);
-    font-size: 1.6rem;
+    font-size: 1.5rem;
     font-weight: 800;
     color: var(--text-primary);
     margin-bottom: 0.35rem;
@@ -341,13 +341,60 @@ body {
 
 .auth-header p {
     color: var(--text-secondary);
-    font-size: 0.88rem;
+    font-size: 0.85rem;
+}
+
+/* Botão GitHub OAuth */
+.btn-github {
+    background: #24292f;
+    color: #ffffff;
+    border: 1px solid #374151;
+    padding: 0.8rem 1.25rem;
+    border-radius: var(--radius-md);
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    width: 100%;
+    transition: var(--transition);
+    box-shadow: var(--shadow-sm);
+}
+
+.btn-github:hover {
+    background: #1b1f24;
+    border-color: #4b5563;
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
+}
+
+.auth-divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.auth-divider span {
+    padding: 0 0.75rem;
 }
 
 .auth-form {
     display: flex;
     flex-direction: column;
-    gap: 1.1rem;
+    gap: 1rem;
 }
 
 .form-group {
@@ -465,7 +512,7 @@ body {
 
 .config-accordion {
     border-top: 1px solid var(--border-color);
-    padding-top: 1rem;
+    padding-top: 0.85rem;
 }
 
 .accordion-toggle {
@@ -974,7 +1021,7 @@ body {
 
 /* ==========================================================
    Analytics Charts Section
-   ========================================================== */
+   ========================================================= */
 .charts-section {
     display: grid;
     grid-template-columns: 1fr 1fr;
