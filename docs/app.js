@@ -187,6 +187,19 @@ function populateCityFilter(data) {
     });
 }
 
+// Coordenadas padrão dos polos de MT
+const CITY_COORDS = {
+    "PRIMAVERA DO LESTE": [-15.552, -54.283],
+    "VARZEA GRANDE": [-15.631, -56.177],
+    "CUIABA": [-15.600, -56.096],
+    "BARRA DO GARCAS": [-15.891, -52.261],
+    "SORRISO": [-12.546, -55.726],
+    "CONFRESA": [-10.657, -51.570],
+    "BRASNORTE": [-12.125, -58.006],
+    "RONDONOPOLIS": [-16.467, -54.636],
+    "SINOP": [-11.860, -55.509]
+};
+
 // ==========================================================
 // 3. Map with State of Mato Grosso Highlight (Leaflet)
 // ==========================================================
@@ -199,15 +212,10 @@ function initMap() {
         scrollWheelZoom: true
     }).fitBounds(MT_DEFAULT_BOUNDS);
 
-    // Tiles limpos do CartoDB Dark Matter / Positron de alta performance
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const tileUrl = isDark 
-        ? 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
-        : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-
-    L.tileLayer(tileUrl, {
-        attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-        maxZoom: 18
+    // OpenStreetMap 100% livre e gratuito (NÃO requer API Key)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19
     }).addTo(state.map);
 
     state.markersGroup = L.layerGroup().addTo(state.map);
@@ -305,8 +313,18 @@ function renderMap() {
         bounds.extend([item.latitude, item.longitude]);
     });
 
-    if (state.currentCity !== 'ALL' && bounds.isValid()) {
-        state.map.fitBounds(bounds, { padding: [30, 30], maxZoom: 14 });
+    if (state.currentCity !== 'ALL') {
+        if (bounds.isValid()) {
+            state.map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+        } else if (CITY_COORDS[state.currentCity]) {
+            state.map.setView(CITY_COORDS[state.currentCity], 13);
+        }
+    } else {
+        if (state.mtBounds) {
+            state.map.fitBounds(state.mtBounds, { padding: [20, 20] });
+        } else if (bounds.isValid()) {
+            state.map.fitBounds(bounds, { padding: [30, 30] });
+        }
     }
 
     setTimeout(() => {
