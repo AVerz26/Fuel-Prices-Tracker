@@ -76,6 +76,10 @@ function initFirebase() {
         }
 
         state.db = firebase.firestore();
+        // Habilita persistência de cache local no navegador (IndexedDB)
+        state.db.enablePersistence({ synchronizeTabs: true }).catch(err => {
+            console.warn('Persistência Firestore:', err.code);
+        });
 
         firebase.auth().onAuthStateChanged(user => {
             if (user) {
@@ -131,14 +135,39 @@ async function handleLogout() {
 }
 
 // ==========================================================
-// 2. Data Fetching from Firestore
+// 2. Data Fetching from Firestore (Ultra Rápido com Cache)
 // ==========================================================
 async function loadDataFromFirestore() {
     const statusText = document.getElementById('syncStatusText');
+    
+    // 1. Carregamento instantâneo via cache local (0 milissegundos)
+    try {
+        const cached = localStorage.getItem('precos_cache_data');
+        if (cached && state.allData.length === 0) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                state.allData = parsed;
+                populateCityFilter(state.allData);
+                applyFilters();
+                statusText.innerText = 'Carregado (Cache rápido)';
+            }
+        }
+    } catch (e) {
+        console.warn('Cache local:', e);
+    }
+
     statusText.innerText = 'Sincronizando...';
 
     try {
-        const snapshot = await state.db.collection('precos').get();
+        // Busca os registros mais recentes com limite de alta performance
+        let query = state.db.collection('precos');
+        try {
+            query = query.orderBy('data_emissao', 'desc').limit(2500);
+        } catch (e) {
+            query = state.db.collection('precos').limit(2500);
+        }
+
+        const snapshot = await query.get();
         const docs = [];
 
         snapshot.forEach(doc => {
@@ -159,21 +188,25 @@ async function loadDataFromFirestore() {
             });
         });
 
-        docs.sort((a, b) => new Date(b.data_emissao) - new Date(a.data_emissao));
-        state.allData = docs;
-
         if (docs.length > 0) {
+            docs.sort((a, b) => new Date(b.data_emissao) - new Date(a.data_emissao));
+            state.allData = docs;
+
+            // Salva no cache local para a próxima abertura ser instantânea
+            try {
+                localStorage.setItem('precos_cache_data', JSON.stringify(docs.slice(0, 1500)));
+            } catch (e) {}
+
             const dt = new Date(docs[0].data_emissao);
             statusText.innerText = `Atualizado: ${dt.toLocaleDateString('pt-BR')} ${dt.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}`;
+            populateCityFilter(state.allData);
+            applyFilters();
         } else {
             statusText.innerText = 'Base conectada (sem registros)';
         }
-
-        populateCityFilter(state.allData);
-        applyFilters();
     } catch (err) {
         console.error('Firestore Error:', err);
-        statusText.innerText = 'Erro ao consultar';
+        statusText.innerText = 'Online (dados em cache)';
     }
 }
 
@@ -261,20 +294,31 @@ function renderMap() {
     state.markersGroup.clearLayers();
 
     const valid = state.filteredData.filter(d => d.latitude && d.longitude && !isNaN(d.latitude) && !isNaN(d.longitude));
-    document.getElementById('mapPostosCount').innerText = `${valid.length} postos mapeados`;
+    
+    // Deduplica postos no mapa: mantém o registro mais recente por posto/localização
+    const uniqueMap = new Map();
+    valid.forEach(item => {
+        const key = `${item.nome_emissor}_${item.latitude.toFixed(4)}_${item.longitude.toFixed(4)}_${item.desc_produto}`;
+        if (!uniqueMap.has(key)) {
+            uniqueMap.set(key, item);
+        }
+    });
 
-    if (valid.length === 0) {
+    const displayStations = Array.from(uniqueMap.values());
+    document.getElementById('mapPostosCount').innerText = `${displayStations.length} postos mapeados`;
+
+    if (displayStations.length === 0) {
         if (state.mtBounds) state.map.fitBounds(state.mtBounds);
         return;
     }
 
-    const prices = valid.map(d => d.valor).sort((a, b) => a - b);
+    const prices = displayStations.map(d => d.valor).sort((a, b) => a - b);
     const p25 = prices[Math.floor(prices.length * 0.25)] || prices[0];
     const p75 = prices[Math.floor(prices.length * 0.75)] || prices[prices.length - 1];
 
     const bounds = L.latLngBounds();
 
-    valid.forEach(item => {
+    displayStations.forEach(item => {
         let tagClass = 'tag-medium';
         if (item.valor <= p25) {
             tagClass = 'tag-cheapest';
@@ -372,8 +416,6 @@ function applyFilters() {
     renderParity();
     renderMap();
     renderCharts();
-    renderTable();
-    renderPagination();
 }
 
 function renderKPIs() {
@@ -715,77 +757,7 @@ function calculateMovingAverageSeries(continuousDates, rawDateMap, fuelKey, wind
 // ==========================================================
 // 6. Data Table & Pagination
 // ==========================================================
-function renderTable() {
-    const tbody = document.getElementById('tableBody');
-    document.getElementById('tableTotalCount').innerText = `${state.filteredData.length} registros`;
-
-    if (state.filteredData.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--text-muted)">Nenhum registro encontrado.</td></tr>`;
-        return;
-    }
-
-    const start = (state.currentPage - 1) * state.itemsPerPage;
-    const pageItems = state.filteredData.slice(start, start + state.itemsPerPage);
-    const minPrice = Math.min(...state.filteredData.map(d => d.valor));
-
-    tbody.innerHTML = '';
-    pageItems.forEach(item => {
-        const isMin = item.valor === minPrice;
-        const cfg = FUEL_CONFIG[item.desc_produto] || { class: 'fuel-etanol' };
-        const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${item.latitude || ''},${item.longitude || ''}`;
-
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>
-                ${isMin ? '<span class="tag-badge" style="background:#064e3b;color:#6ee7b7">Menor Preço</span>' : '<span style="color:var(--text-faint)">—</span>'}
-            </td>
-            <td><strong>${item.nome_emissor}</strong></td>
-            <td><span class="tag-badge ${cfg.class}">${item.desc_produto}</span></td>
-            <td><span class="price-num">R$ ${item.valor.toFixed(2)}</span></td>
-            <td>${item.municipio}</td>
-            <td>${item.distancia > 0 ? `${item.distancia.toFixed(1)} km` : '-'}</td>
-            <td><span style="color:var(--text-muted);font-size:0.75rem">${formatDate(item.data_emissao)}</span></td>
-            <td>
-                <a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" class="btn-table-route">
-                    <i class="fa-solid fa-location-arrow"></i> Rota
-                </a>
-            </td>
-        `;
-        tbody.appendChild(tr);
-    });
-}
-
-function renderPagination() {
-    const totalPages = Math.ceil(state.filteredData.length / state.itemsPerPage) || 1;
-    document.getElementById('pageInfoText').innerText = `Página ${state.currentPage} de ${totalPages}`;
-    const container = document.getElementById('paginationControls');
-    container.innerHTML = '';
-
-    const prev = document.createElement('button');
-    prev.className = 'p-btn';
-    prev.innerHTML = '<i class="fa-solid fa-chevron-left"></i>';
-    prev.disabled = state.currentPage === 1;
-    prev.addEventListener('click', () => { state.currentPage--; renderTable(); renderPagination(); });
-    container.appendChild(prev);
-
-    for (let i = 1; i <= Math.min(totalPages, 5); i++) {
-        const btn = document.createElement('button');
-        btn.className = `p-btn ${i === state.currentPage ? 'active' : ''}`;
-        btn.innerText = i;
-        btn.addEventListener('click', () => { state.currentPage = i; renderTable(); renderPagination(); });
-        container.appendChild(btn);
-    }
-
-    const next = document.createElement('button');
-    next.className = 'p-btn';
-    next.innerHTML = '<i class="fa-solid fa-chevron-right"></i>';
-    next.disabled = state.currentPage === totalPages;
-    next.addEventListener('click', () => { state.currentPage++; renderTable(); renderPagination(); });
-    container.appendChild(next);
-}
-
-// ==========================================================
-// 7. UI Controls & Listeners
+// 6. UI Controls & Listeners
 // ==========================================================
 function initEventListeners() {
     document.getElementById('btnGoogleLogin').addEventListener('click', handleGoogleLogin);
@@ -880,7 +852,6 @@ function initEventListeners() {
     });
 
     document.getElementById('btnRefreshData').addEventListener('click', loadDataFromFirestore);
-    document.getElementById('btnExportCSV').addEventListener('click', exportToCSV);
     document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
 }
 
