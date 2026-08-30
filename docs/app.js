@@ -153,82 +153,71 @@ function isValidPrice(fuel, price) {
 }
 
 // ==========================================================
-// 2. Data Fetching from Firestore (Ultra Rápido com Cache e Sem Outliers)
+// 2. Data Fetching (Dataset Histórico Completo 354k + Live Firestore)
 // ==========================================================
 async function loadDataFromFirestore() {
     const statusText = document.getElementById('syncStatusText');
-    
-    // 1. Carregamento instantâneo via cache local (0 milissegundos)
+    statusText.innerText = 'Carregando base completa de Mato Grosso...';
+
+    // 1. Carrega o dataset consolidado completo com 100% do histórico
     try {
-        const cached = localStorage.getItem('precos_cache_data');
-        if (cached && state.allData.length === 0) {
-            const parsed = JSON.parse(cached);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-                state.allData = parsed.filter(d => isValidPrice(d.desc_produto, d.valor));
+        const res = await fetch('data/historico_completo.json');
+        if (res.ok) {
+            const hist = await res.json();
+            if (hist && hist.postos) {
+                state.allData = hist.postos;
+                state.timelineData = hist.timeline || {};
                 populateCityFilter(state.allData);
                 applyFilters();
-                statusText.innerText = 'Carregado (Cache rápido)';
+                statusText.innerText = `Base MT: ${hist.total_registros_validos.toLocaleString('pt-BR')} registros (${hist.dias_historico} dias)`;
             }
         }
     } catch (e) {
-        console.warn('Cache local:', e);
+        console.warn('Carregamento de histórico JSON:', e);
     }
 
-    statusText.innerText = 'Sincronizando...';
-
-    try {
-        // Busca os registros mais recentes com limite de alta performance
-        let query = state.db.collection('precos');
+    // 2. Consulta incremental ao Firestore para puxar dados em tempo real
+    if (state.db) {
         try {
-            query = query.orderBy('data_emissao', 'desc').limit(2500);
-        } catch (e) {
-            query = state.db.collection('precos').limit(2500);
-        }
+            const query = state.db.collection('precos').orderBy('data_emissao', 'desc').limit(500);
+            const snapshot = await query.get();
+            const liveDocs = [];
 
-        const snapshot = await query.get();
-        const docs = [];
+            snapshot.forEach(doc => {
+                const d = doc.data();
+                let prod = (d.desc_produto || '').toUpperCase().trim();
+                if (prod === 'GASOLINA COMUM') prod = 'GASOLINA';
+                const val = parseFloat(d.valor_unidade_comercial || d.valor || 0);
 
-        snapshot.forEach(doc => {
-            const d = doc.data();
-            let prod = (d.desc_produto || '').toUpperCase().trim();
-            if (prod === 'GASOLINA COMUM') prod = 'GASOLINA';
-            const val = parseFloat(d.valor_unidade_comercial || d.valor || 0);
+                if (!isValidPrice(prod, val)) return;
 
-            // Filtro de Outliers: descarta leituras fora do intervalo real de mercado
-            if (!isValidPrice(prod, val)) return;
-
-            docs.push({
-                id: d.id || doc.id,
-                nome_emissor: d.nome_emissor || '',
-                desc_produto: prod,
-                valor: val,
-                municipio: (d.nome_municipio_emissor || d.municipio || '').toUpperCase().trim(),
-                latitude: d.latitude ? parseFloat(d.latitude) : null,
-                longitude: d.longitude ? parseFloat(d.longitude) : null,
-                distancia: d.distancia ? parseFloat(d.distancia) : 0.0,
-                data_emissao: d.data_emissao || ''
+                liveDocs.push({
+                    id: d.id || doc.id,
+                    nome_emissor: d.nome_emissor || '',
+                    desc_produto: prod,
+                    valor: val,
+                    municipio: (d.nome_municipio_emissor || d.municipio || '').toUpperCase().trim(),
+                    latitude: d.latitude ? parseFloat(d.latitude) : null,
+                    longitude: d.longitude ? parseFloat(d.longitude) : null,
+                    distancia: d.distancia ? parseFloat(d.distancia) : 0.0,
+                    data_emissao: d.data_emissao || ''
+                });
             });
-        });
 
-        if (docs.length > 0) {
-            docs.sort((a, b) => new Date(b.data_emissao) - new Date(a.data_emissao));
-            state.allData = docs;
+            if (liveDocs.length > 0) {
+                const idSet = new Set(liveDocs.map(d => d.id));
+                const combined = [...liveDocs, ...state.allData.filter(d => !idSet.has(d.id))];
+                combined.sort((a, b) => new Date(b.data_emissao) - new Date(a.data_emissao));
+                state.allData = combined;
 
-            // Salva no cache local para a próxima abertura ser instantânea
-            try {
-                localStorage.setItem('precos_cache_data', JSON.stringify(docs.slice(0, 1500)));
-            } catch (e) {}
-
-            const dt = new Date(docs[0].data_emissao);
-            statusText.innerText = `Atualizado: ${dt.toLocaleDateString('pt-BR')} ${dt.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}`;
-            populateCityFilter(state.allData);
-            applyFilters();
-        } else {
-            statusText.innerText = 'Base conectada (sem registros)';
+                populateCityFilter(state.allData);
+                applyFilters();
+                const dt = new Date(combined[0].data_emissao);
+                statusText.innerText = `Sincronizado: ${dt.toLocaleDateString('pt-BR')} ${dt.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}`;
+            }
+        } catch (err) {
+            console.warn('Sync Firestore incremental:', err);
         }
-    } catch (err) {
-        console.error('Firestore Error:', err);
-        statusText.innerText = 'Online (dados em cache)';
     }
 }
 
@@ -508,12 +497,26 @@ function renderCharts() {
     const textColor = isDark ? '#94a3b8' : '#475569';
     const gridColor = isDark ? '#1e293b' : '#e2e8f0';
 
-    if (state.filteredData.length === 0) return;
-
-    // 1. Mapeamento de dados brutos por data
+    // 1. Mapeamento de dados por data (100% da base histórica consolidada + tempo real)
     const datesMap = {};
     let latestTimestamp = 0;
     let earliestTimestamp = Infinity;
+
+    // Incorpora histórico global consolidado de todas as datas
+    if (state.currentCity === 'ALL' && state.timelineData) {
+        Object.entries(state.timelineData).forEach(([day, fuels]) => {
+            const ts = new Date(day).getTime();
+            if (!isNaN(ts)) {
+                if (ts > latestTimestamp) latestTimestamp = ts;
+                if (ts < earliestTimestamp) earliestTimestamp = ts;
+                if (!datesMap[day]) datesMap[day] = {};
+                Object.entries(fuels).forEach(([fuel, stats]) => {
+                    if (!datesMap[day][fuel]) datesMap[day][fuel] = [];
+                    if (stats && stats.media) datesMap[day][fuel].push(stats.media);
+                });
+            }
+        });
+    }
 
     state.filteredData.forEach(d => {
         if (!d.data_emissao) return;
