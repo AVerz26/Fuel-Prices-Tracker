@@ -149,9 +149,9 @@
                     <div class="kpi-sub" id="kpiEtanolStation">Carregando...</div>
                 </div>
 
-                <div class="kpi-card" data-fuel="GASOLINA COMUM">
+                <div class="kpi-card" data-fuel="GASOLINA">
                     <div class="kpi-top">
-                        <span class="kpi-label">Gasolina Comum</span>
+                        <span class="kpi-label">Gasolina</span>
                         <span class="kpi-tag">Menor</span>
                     </div>
                     <div class="kpi-val" id="kpiGasolinaPrice">R$ --</div>
@@ -195,7 +195,7 @@
                 <div class="fuel-selector" id="fuelSelector">
                     <button class="filter-chip active" data-fuel="ALL">Todos</button>
                     <button class="filter-chip" data-fuel="ETANOL">Etanol</button>
-                    <button class="filter-chip" data-fuel="GASOLINA COMUM">Gasolina Comum</button>
+                    <button class="filter-chip" data-fuel="GASOLINA">Gasolina</button>
                     <button class="filter-chip" data-fuel="GASOLINA ADITIVADA">Gasolina Adit.</button>
                     <button class="filter-chip" data-fuel="DIESEL S10">Diesel S10</button>
                     <button class="filter-chip" data-fuel="DIESEL S500">Diesel S500</button>
@@ -259,6 +259,13 @@
                 <div class="analytics-card chart-span-2">
                     <div class="card-head">
                         <h3><i class="fa-solid fa-chart-line"></i> Histórico de Preço Médio Diário</h3>
+                        <div class="chart-period-selector" id="chartPeriodSelector">
+                            <button class="period-chip" data-period="7D">7D</button>
+                            <button class="period-chip active" data-period="1M">1M</button>
+                            <button class="period-chip" data-period="6M">6M</button>
+                            <button class="period-chip" data-period="1A">1A</button>
+                            <button class="period-chip" data-period="ALL">Tudo</button>
+                        </div>
                     </div>
                     <div class="chart-box">
                         <canvas id="priceEvolutionChart"></canvas>

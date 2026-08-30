@@ -120,7 +120,7 @@ def classificar(prod):
     elif "GASOLINA" in prod and "ADIT" in prod:
         return "GASOLINA ADITIVADA"
     elif "GASOLINA" in prod:
-        return "GASOLINA COMUM"
+        return "GASOLINA"
     elif "DIESEL" in prod and ("S10" in prod or "S-10" in prod):
         return "DIESEL S10"
     elif "DIESEL" in prod and ("S500" in prod or "S-500" in prod or "COMUM" in prod):

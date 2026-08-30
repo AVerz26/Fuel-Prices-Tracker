@@ -28,7 +28,7 @@ const state = {
 
 const FUEL_CONFIG = {
     'ETANOL': { class: 'fuel-etanol', label: 'Etanol' },
-    'GASOLINA COMUM': { class: 'fuel-gasolina-comum', label: 'Gasolina Comum' },
+    'GASOLINA': { class: 'fuel-gasolina', label: 'Gasolina' },
     'GASOLINA ADITIVADA': { class: 'fuel-gasolina-aditivada', label: 'Gasolina Aditivada' },
     'DIESEL S10': { class: 'fuel-diesel-s10', label: 'Diesel S10' },
     'DIESEL S500': { class: 'fuel-diesel-s500', label: 'Diesel S500' }
@@ -143,10 +143,13 @@ async function loadDataFromFirestore() {
 
         snapshot.forEach(doc => {
             const d = doc.data();
+            let prod = (d.desc_produto || '').toUpperCase().trim();
+            if (prod === 'GASOLINA COMUM') prod = 'GASOLINA';
+
             docs.push({
                 id: d.id || doc.id,
                 nome_emissor: d.nome_emissor || '',
-                desc_produto: (d.desc_produto || '').toUpperCase().trim(),
+                desc_produto: prod,
                 valor: parseFloat(d.valor_unidade_comercial || d.valor || 0),
                 municipio: (d.nome_municipio_emissor || d.municipio || '').toUpperCase().trim(),
                 latitude: d.latitude ? parseFloat(d.latitude) : null,
@@ -376,7 +379,7 @@ function applyFilters() {
 function renderKPIs() {
     const fuels = [
         { key: 'ETANOL', valId: 'kpiEtanolPrice', stId: 'kpiEtanolStation' },
-        { key: 'GASOLINA COMUM', valId: 'kpiGasolinaPrice', stId: 'kpiGasolinaStation' },
+        { key: 'GASOLINA', valId: 'kpiGasolinaPrice', stId: 'kpiGasolinaStation' },
         { key: 'GASOLINA ADITIVADA', valId: 'kpiAditivadaPrice', stId: 'kpiAditivadaStation' },
         { key: 'DIESEL S10', valId: 'kpiDieselPrice', stId: 'kpiDieselStation' }
     ];
@@ -402,7 +405,7 @@ function renderKPIs() {
 function renderParity() {
     const baseData = state.currentCity === 'ALL' ? state.allData : state.allData.filter(d => d.municipio === state.currentCity);
     const etanol = baseData.filter(d => d.desc_produto === 'ETANOL');
-    const gasolina = baseData.filter(d => d.desc_produto === 'GASOLINA COMUM');
+    const gasolina = baseData.filter(d => d.desc_produto === 'GASOLINA');
 
     const ratioElem = document.getElementById('parityRatioValue');
     const verdictElem = document.getElementById('parityVerdict');
@@ -434,89 +437,148 @@ function renderParity() {
 }
 
 // ==========================================================
-// 5. Chart.js Visualizations
+// 5. Chart.js Visualizations (Com Análise 7D, 1M, 6M, 1A e Média Móvel)
 // ==========================================================
 function renderCharts() {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const textColor = isDark ? '#94a3b8' : '#475569';
     const gridColor = isDark ? '#1e293b' : '#e2e8f0';
 
+    if (state.filteredData.length === 0) return;
+
+    // 1. Mapeamento de dados brutos por data
     const datesMap = {};
+    let latestTimestamp = 0;
+    let earliestTimestamp = Infinity;
+
     state.filteredData.forEach(d => {
         if (!d.data_emissao) return;
         const day = d.data_emissao.split('T')[0].split(' ')[0];
+        const ts = new Date(day).getTime();
+        if (ts > latestTimestamp) latestTimestamp = ts;
+        if (ts < earliestTimestamp) earliestTimestamp = ts;
+
         if (!datesMap[day]) datesMap[day] = {};
         if (!datesMap[day][d.desc_produto]) datesMap[day][d.desc_produto] = [];
         datesMap[day][d.desc_produto].push(d.valor);
     });
 
-    const sortedDays = Object.keys(datesMap).sort();
-    const dayLabels = sortedDays.map(day => {
+    const maxDateStr = latestTimestamp > 0 ? new Date(latestTimestamp).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+
+    // 2. Determina a quantidade de dias para a série contínua
+    let daysCount = 30; // Padrão 1M
+    const period = state.chartPeriod || '1M';
+    if (period === '7D') daysCount = 7;
+    else if (period === '1M') daysCount = 30;
+    else if (period === '6M') daysCount = 180;
+    else if (period === '1A') daysCount = 365;
+    else if (period === 'ALL') {
+        const diffDays = Math.ceil((latestTimestamp - earliestTimestamp) / (1000 * 60 * 60 * 24)) + 1;
+        daysCount = Math.max(diffDays, 7);
+    }
+
+    // 3. Gera linha do tempo contínua (dia a dia)
+    const continuousDates = [];
+    const maxDateObj = new Date(maxDateStr);
+    for (let i = daysCount - 1; i >= 0; i--) {
+        const dt = new Date(maxDateObj);
+        dt.setDate(dt.getDate() - i);
+        continuousDates.push(dt.toISOString().slice(0, 10));
+    }
+
+    const dayLabels = continuousDates.map(day => {
         const p = day.split('-');
         return p.length === 3 ? `${p[2]}/${p[1]}` : day;
     });
 
-    // Gráfico 1: Evolução
+    // 4. Média Móvel para suavizar e preencher dados faltantes
+    const etanolSeries = calculateMovingAverageSeries(continuousDates, datesMap, 'ETANOL', 5);
+    const gasolinaSeries = calculateMovingAverageSeries(continuousDates, datesMap, 'GASOLINA', 5);
+    const aditivadaSeries = calculateMovingAverageSeries(continuousDates, datesMap, 'GASOLINA ADITIVADA', 5);
+    const dieselSeries = calculateMovingAverageSeries(continuousDates, datesMap, 'DIESEL S10', 5);
+
+    // Gráfico 1: Evolução Temporal com Média Móvel
     const ctxEvol = document.getElementById('priceEvolutionChart').getContext('2d');
     if (state.charts.priceEvolution) state.charts.priceEvolution.destroy();
 
     state.charts.priceEvolution = new Chart(ctxEvol, {
         type: 'line',
         data: {
-            labels: dayLabels.length > 0 ? dayLabels : ['Sem dados'],
+            labels: dayLabels,
             datasets: [
                 {
                     label: 'Etanol',
-                    data: sortedDays.map(d => calcAvg(datesMap[d]['ETANOL'])),
+                    data: etanolSeries,
                     borderColor: '#10b981',
-                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    backgroundColor: 'rgba(16, 185, 129, 0.08)',
                     borderWidth: 2,
-                    tension: 0.25,
-                    pointRadius: 3
+                    tension: 0.3,
+                    pointRadius: daysCount <= 30 ? 3 : 0,
+                    pointHoverRadius: 5
                 },
                 {
-                    label: 'Gasolina Comum',
-                    data: sortedDays.map(d => calcAvg(datesMap[d]['GASOLINA COMUM'])),
+                    label: 'Gasolina',
+                    data: gasolinaSeries,
                     borderColor: '#f59e0b',
-                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                    backgroundColor: 'rgba(245, 158, 11, 0.08)',
                     borderWidth: 2,
-                    tension: 0.25,
-                    pointRadius: 3
+                    tension: 0.3,
+                    pointRadius: daysCount <= 30 ? 3 : 0,
+                    pointHoverRadius: 5
                 },
                 {
                     label: 'Gasolina Aditivada',
-                    data: sortedDays.map(d => calcAvg(datesMap[d]['GASOLINA ADITIVADA'])),
+                    data: aditivadaSeries,
                     borderColor: '#ec4899',
                     borderWidth: 2,
-                    tension: 0.25,
-                    pointRadius: 3
+                    tension: 0.3,
+                    pointRadius: daysCount <= 30 ? 3 : 0,
+                    pointHoverRadius: 5
                 },
                 {
                     label: 'Diesel S10',
-                    data: sortedDays.map(d => calcAvg(datesMap[d]['DIESEL S10'])),
+                    data: dieselSeries,
                     borderColor: '#0ea5e9',
                     borderWidth: 2,
-                    tension: 0.25,
-                    pointRadius: 3
+                    tension: 0.3,
+                    pointRadius: daysCount <= 30 ? 3 : 0,
+                    pointHoverRadius: 5
                 }
             ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: { legend: { labels: { color: textColor, boxWidth: 12 } } },
+            interaction: { mode: 'index', intersect: false },
+            plugins: { 
+                legend: { labels: { color: textColor, boxWidth: 12, font: { family: 'Inter', size: 11 } } },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.dataset.label}: R$ ${parseFloat(context.raw).toFixed(2)}`;
+                        }
+                    }
+                }
+            },
             scales: {
-                x: { ticks: { color: textColor }, grid: { color: gridColor } },
-                y: { ticks: { color: textColor }, grid: { color: gridColor } }
+                x: { ticks: { color: textColor, maxTicksLimit: 10, font: { family: 'Inter', size: 10 } }, grid: { color: gridColor } },
+                y: { 
+                    ticks: { 
+                        color: textColor,
+                        callback: val => `R$ ${val.toFixed(2)}`,
+                        font: { family: 'Inter', size: 10 }
+                    }, 
+                    grid: { color: gridColor } 
+                }
             }
         }
     });
 
-    // Gráfico 2: Paridade
-    const parityVals = sortedDays.map(d => {
-        const e = calcAvg(datesMap[d]['ETANOL']);
-        const g = calcAvg(datesMap[d]['GASOLINA COMUM']);
-        return (e && g) ? ((e / g) * 100).toFixed(1) : null;
+    // Gráfico 2: Paridade Etanol/Gasolina com Média Móvel
+    const parityVals = continuousDates.map((_, idx) => {
+        const e = etanolSeries[idx];
+        const g = gasolinaSeries[idx];
+        return (e && g && g > 0) ? parseFloat(((e / g) * 100).toFixed(1)) : null;
     });
 
     const ctxPar = document.getElementById('parityChart').getContext('2d');
@@ -525,20 +587,21 @@ function renderCharts() {
     state.charts.parity = new Chart(ctxPar, {
         type: 'line',
         data: {
-            labels: dayLabels.length > 0 ? dayLabels : ['Sem dados'],
+            labels: dayLabels,
             datasets: [
                 {
-                    label: 'Relação (%)',
+                    label: 'Paridade (%)',
                     data: parityVals,
                     borderColor: '#2563eb',
                     backgroundColor: 'rgba(37, 99, 235, 0.1)',
                     fill: true,
                     borderWidth: 2,
-                    tension: 0.25
+                    tension: 0.3,
+                    pointRadius: daysCount <= 30 ? 3 : 0
                 },
                 {
-                    label: 'Teto 70%',
-                    data: sortedDays.map(() => 70),
+                    label: 'Teto 70% (Vantagem Etanol)',
+                    data: continuousDates.map(() => 70),
                     borderColor: '#ef4444',
                     borderDash: [5, 5],
                     borderWidth: 1.5,
@@ -549,15 +612,27 @@ function renderCharts() {
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: { legend: { labels: { color: textColor, boxWidth: 12 } } },
+            plugins: { 
+                legend: { labels: { color: textColor, boxWidth: 12, font: { family: 'Inter', size: 11 } } },
+                tooltip: {
+                    callbacks: {
+                        label: context => `${context.dataset.label}: ${context.raw}%`
+                    }
+                }
+            },
             scales: {
-                x: { ticks: { color: textColor }, grid: { color: gridColor } },
-                y: { ticks: { color: textColor }, grid: { color: gridColor }, suggestedMin: 60, suggestedMax: 80 }
+                x: { ticks: { color: textColor, maxTicksLimit: 8, font: { family: 'Inter', size: 10 } }, grid: { color: gridColor } },
+                y: { 
+                    ticks: { color: textColor, callback: val => `${val}%`, font: { family: 'Inter', size: 10 } }, 
+                    grid: { color: gridColor }, 
+                    suggestedMin: 60, 
+                    suggestedMax: 80 
+                }
             }
         }
     });
 
-    // Gráfico 3: Cidades
+    // Gráfico 3: Comparativo por Cidade
     const cityMap = {};
     state.filteredData.forEach(d => {
         if (!cityMap[d.municipio]) cityMap[d.municipio] = [];
@@ -566,7 +641,7 @@ function renderCharts() {
 
     const cities = Object.keys(cityMap);
     const minPrices = cities.map(c => Math.min(...cityMap[c]));
-    const avgPrices = cities.map(c => (cityMap[c].reduce((a, b) => a + b, 0) / cityMap[c].length).toFixed(2));
+    const avgPrices = cities.map(c => parseFloat((cityMap[c].reduce((a, b) => a + b, 0) / cityMap[c].length).toFixed(2)));
 
     const ctxCity = document.getElementById('cityComparisonChart').getContext('2d');
     if (state.charts.cityComparison) state.charts.cityComparison.destroy();
@@ -583,18 +658,58 @@ function renderCharts() {
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: { legend: { labels: { color: textColor, boxWidth: 12 } } },
+            plugins: { legend: { labels: { color: textColor, boxWidth: 12, font: { family: 'Inter', size: 11 } } } },
             scales: {
-                x: { ticks: { color: textColor }, grid: { color: gridColor } },
-                y: { ticks: { color: textColor }, grid: { color: gridColor } }
+                x: { ticks: { color: textColor, font: { family: 'Inter', size: 10 } }, grid: { color: gridColor } },
+                y: { ticks: { color: textColor, callback: val => `R$ ${val.toFixed(2)}`, font: { family: 'Inter', size: 10 } }, grid: { color: gridColor } }
             }
         }
     });
 }
 
-function calcAvg(arr) {
-    if (!arr || arr.length === 0) return null;
-    return parseFloat((arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(2));
+// Função de Média Móvel com interpolação contínua para lacunas
+function calculateMovingAverageSeries(continuousDates, rawDateMap, fuelKey, windowSize = 5) {
+    const rawValues = continuousDates.map(d => {
+        const vals = rawDateMap[d] && rawDateMap[d][fuelKey];
+        if (vals && vals.length > 0) {
+            return vals.reduce((a, b) => a + b, 0) / vals.length;
+        }
+        return null;
+    });
+
+    const result = [];
+    let lastValid = null;
+
+    // Preenche primeiro com a média dos primeiros valores conhecidos se o início for nulo
+    const firstKnown = rawValues.find(v => v !== null);
+    if (firstKnown !== undefined) lastValid = firstKnown;
+
+    for (let i = 0; i < rawValues.length; i++) {
+        if (rawValues[i] !== null) {
+            result.push(parseFloat(rawValues[i].toFixed(2)));
+            lastValid = rawValues[i];
+        } else {
+            // Média móvel da janela dos vizinhos mais próximos
+            const windowValues = [];
+            const start = Math.max(0, i - windowSize);
+            const end = Math.min(rawValues.length, i + windowSize + 1);
+            for (let j = start; j < end; j++) {
+                if (rawValues[j] !== null) windowValues.push(rawValues[j]);
+            }
+
+            if (windowValues.length > 0) {
+                const avg = windowValues.reduce((a, b) => a + b, 0) / windowValues.length;
+                result.push(parseFloat(avg.toFixed(2)));
+                lastValid = avg;
+            } else if (lastValid !== null) {
+                result.push(parseFloat(lastValid.toFixed(2)));
+            } else {
+                result.push(null);
+            }
+        }
+    }
+
+    return result;
 }
 
 // ==========================================================
@@ -720,6 +835,17 @@ function initEventListeners() {
             chip.classList.add('active');
             state.currentFuel = chip.getAttribute('data-fuel');
             applyFilters();
+        });
+    });
+
+    // Seletor de Período dos Gráficos (7D, 1M, 6M, 1A, Tudo)
+    const periodChips = document.querySelectorAll('#chartPeriodSelector .period-chip');
+    periodChips.forEach(pChip => {
+        pChip.addEventListener('click', () => {
+            periodChips.forEach(p => p.classList.remove('active'));
+            pChip.classList.add('active');
+            state.chartPeriod = pChip.getAttribute('data-period');
+            renderCharts();
         });
     });
 

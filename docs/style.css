@@ -887,6 +887,12 @@ body {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+.card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
 }
 
 .card-head h3 {
@@ -896,6 +902,37 @@ body {
     display: flex;
     align-items: center;
     gap: 0.4rem;
+}
+
+.chart-period-selector {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: var(--bg-subtle);
+    padding: 0.2rem;
+    border-radius: var(--radius-sm);
+}
+
+.period-chip {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.period-chip:hover {
+    color: var(--text-main);
+}
+
+.period-chip.active {
+    background: var(--bg-card);
+    color: var(--accent-blue);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 
 .chart-box {
