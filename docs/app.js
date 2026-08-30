@@ -1,9 +1,8 @@
 /**
- * Menor Preço MT - Interactive Dashboard Logic
- * Autenticação via Google Firebase (Google 1-Clique / E-mail) + Firestore + Mapa Leaflet + Evolução Temporal + Paridade 70%
+ * Monitor de Combustíveis MT - Clean & Fast Analytics
+ * Leaflet com destaque do Estado de Mato Grosso + Firebase Firestore + Análise de Paridade
  */
 
-// Estado Global da Aplicação
 const state = {
     firebaseApp: null,
     db: null,
@@ -15,9 +14,11 @@ const state = {
     searchQuery: '',
     currentSort: 'price-asc',
     currentPage: 1,
-    itemsPerPage: 10,
+    itemsPerPage: 12,
     map: null,
     markersGroup: null,
+    mtBoundaryLayer: null,
+    mtBounds: null,
     charts: {
         priceEvolution: null,
         parity: null,
@@ -25,25 +26,29 @@ const state = {
     }
 };
 
-// Paleta de cores para os combustíveis
-const FUEL_COLORS = {
-    'ETANOL': { bg: 'rgba(16, 185, 129, 0.2)', border: '#10b981', class: 'etanol', icon: 'fa-leaf' },
-    'GASOLINA COMUM': { bg: 'rgba(245, 158, 11, 0.2)', border: '#f59e0b', class: 'gasolina-comum', icon: 'fa-gas-pump' },
-    'GASOLINA ADITIVADA': { bg: 'rgba(236, 72, 153, 0.2)', border: '#ec4899', class: 'gasolina-aditivada', icon: 'fa-fire' },
-    'DIESEL S10': { bg: 'rgba(6, 182, 212, 0.2)', border: '#06b6d4', class: 'diesel-s10', icon: 'fa-truck' },
-    'DIESEL S500': { bg: 'rgba(139, 92, 246, 0.2)', border: '#8b5cf6', class: 'diesel-s500', icon: 'fa-truck-moving' }
+const FUEL_CONFIG = {
+    'ETANOL': { class: 'fuel-etanol', label: 'Etanol' },
+    'GASOLINA COMUM': { class: 'fuel-gasolina-comum', label: 'Gasolina Comum' },
+    'GASOLINA ADITIVADA': { class: 'fuel-gasolina-aditivada', label: 'Gasolina Aditivada' },
+    'DIESEL S10': { class: 'fuel-diesel-s10', label: 'Diesel S10' },
+    'DIESEL S500': { class: 'fuel-diesel-s500', label: 'Diesel S500' }
 };
 
-const DEFAULT_MT_CENTER = [-15.552, -54.283]; // Centro de MT (Primavera do Leste)
+// Bounding box padrão de Mato Grosso
+const MT_DEFAULT_BOUNDS = [
+    [-18.04, -61.63], // Sudoeste
+    [-7.35, -50.22]   // Nordeste
+];
 
-// Inicialização da Aplicação
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
     initEventListeners();
     initFirebase();
 });
 
-// 1. Inicialização do Firebase
+// ==========================================================
+// 1. Firebase Initialization & Auth
+// ==========================================================
 function initFirebase() {
     const savedApiKey = localStorage.getItem('firebase_api_key') || (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey);
     const savedProjectId = localStorage.getItem('firebase_project_id') || (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.projectId);
@@ -51,10 +56,9 @@ function initFirebase() {
 
     if (savedApiKey) document.getElementById('cfgApiKey').value = savedApiKey;
     if (savedProjectId) document.getElementById('cfgProjectId').value = savedProjectId;
-    if (savedAuthDomain) document.getElementById('cfgAuthDomain').value = savedAuthDomain;
 
     if (!savedApiKey || !savedProjectId) {
-        showAuthAlert('Chaves do Firebase não configuradas. Clique em "Configurações do Firebase" abaixo.', 'warning');
+        showAuthAlert('Chaves do Firebase não configuradas.', 'warning');
         return;
     }
 
@@ -73,650 +77,544 @@ function initFirebase() {
 
         state.db = firebase.firestore();
 
-        // Monitora estado de autenticação em tempo real
         firebase.auth().onAuthStateChanged(user => {
             if (user) {
                 state.currentUser = user;
-                showDashboardView(user);
+                showDashboard(user);
                 loadDataFromFirestore();
             } else {
                 state.currentUser = null;
-                showLoginView();
+                showAuth();
             }
         });
-
     } catch (err) {
-        console.error('Erro ao inicializar Firebase:', err);
-        showAuthAlert('Erro ao conectar com Firebase. Verifique as chaves fornecidas.');
+        console.error('Erro Firebase:', err);
+        showAuthAlert('Erro ao inicializar Firebase. Verifique a configuração.');
     }
 }
 
-// 2. Login com Google (1 clique)
 async function handleGoogleLogin() {
     hideAuthAlert();
-    if (!state.firebaseApp) {
-        showAuthAlert('Configure as chaves do Firebase antes de logar.');
-        return;
-    }
-
+    if (!state.firebaseApp) return showAuthAlert('Configure o Firebase antes de prosseguir.');
     try {
         const provider = new firebase.auth.GoogleAuthProvider();
         await firebase.auth().signInWithPopup(provider);
     } catch (err) {
-        console.error('Erro no login com Google:', err);
-        showAuthAlert(`Erro ao conectar com Google: ${err.message}`);
+        console.error('Login Google:', err);
+        showAuthAlert(err.message || 'Falha ao autenticar com o Google.');
     }
 }
 
-// 3. Login com E-mail e Senha
-async function handleLogin(e) {
+async function handleEmailLogin(e) {
     e.preventDefault();
     hideAuthAlert();
-
     const email = document.getElementById('loginEmail').value.trim();
     const password = document.getElementById('loginPassword').value;
 
-    if (!state.firebaseApp) {
-        showAuthAlert('Configure as chaves do Firebase antes de logar.');
-        return;
-    }
-
+    if (!state.firebaseApp) return showAuthAlert('Configure o Firebase primeiro.');
     setLoginLoading(true);
 
     try {
         await firebase.auth().signInWithEmailAndPassword(email, password);
     } catch (err) {
-        console.error('Erro no login:', err);
-        let msg = 'Erro ao efetuar login. Verifique suas credenciais.';
-        if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
-            msg = 'E-mail ou senha incorretos.';
-        } else if (err.message) {
-            msg = err.message;
-        }
-        showAuthAlert(msg);
+        console.error('Login Email:', err);
+        showAuthAlert('E-mail ou senha inválidos.');
     } finally {
         setLoginLoading(false);
     }
 }
 
-// 4. Logout
 async function handleLogout() {
-    if (state.firebaseApp) {
-        await firebase.auth().signOut();
-    }
+    if (state.firebaseApp) await firebase.auth().signOut();
     state.currentUser = null;
-    state.allData = [];
-    state.filteredData = [];
-    showLoginView();
+    showAuth();
 }
 
-// 5. Carregamento dos Dados do Firestore (Protegido por Security Rules)
+// ==========================================================
+// 2. Data Fetching from Firestore
+// ==========================================================
 async function loadDataFromFirestore() {
-    const recordsBadge = document.getElementById('recordsBadge');
-    const syncBadge = document.getElementById('lastUpdatedText');
-    recordsBadge.innerText = 'Consultando Firestore...';
+    const statusText = document.getElementById('syncStatusText');
+    statusText.innerText = 'Sincronizando...';
 
     try {
         const snapshot = await state.db.collection('precos').get();
-
         const docs = [];
+
         snapshot.forEach(doc => {
-            const item = doc.data();
+            const d = doc.data();
             docs.push({
-                id: item.id || doc.id,
-                nome_emissor: item.nome_emissor || '',
-                desc_produto: item.desc_produto || '',
-                valor: parseFloat(item.valor_unidade_comercial || item.valor || 0),
-                municipio: (item.nome_municipio_emissor || item.municipio || '').toUpperCase().trim(),
-                latitude: item.latitude ? parseFloat(item.latitude) : null,
-                longitude: item.longitude ? parseFloat(item.longitude) : null,
-                distancia: item.distancia ? parseFloat(item.distancia) : 0.0,
-                data_emissao: item.data_emissao || ''
+                id: d.id || doc.id,
+                nome_emissor: d.nome_emissor || '',
+                desc_produto: (d.desc_produto || '').toUpperCase().trim(),
+                valor: parseFloat(d.valor_unidade_comercial || d.valor || 0),
+                municipio: (d.nome_municipio_emissor || d.municipio || '').toUpperCase().trim(),
+                latitude: d.latitude ? parseFloat(d.latitude) : null,
+                longitude: d.longitude ? parseFloat(d.longitude) : null,
+                distancia: d.distancia ? parseFloat(d.distancia) : 0.0,
+                data_emissao: d.data_emissao || ''
             });
         });
 
-        // Ordena por data mais recente
         docs.sort((a, b) => new Date(b.data_emissao) - new Date(a.data_emissao));
         state.allData = docs;
 
-        if (state.allData.length > 0) {
-            const latestDate = state.allData[0].data_emissao;
-            updateSyncBadge(latestDate);
+        if (docs.length > 0) {
+            const dt = new Date(docs[0].data_emissao);
+            statusText.innerText = `Atualizado: ${dt.toLocaleDateString('pt-BR')} ${dt.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}`;
         } else {
-            syncBadge.innerText = 'Base autenticada (vazia)';
+            statusText.innerText = 'Base conectada (sem registros)';
         }
 
         populateCityFilter(state.allData);
         applyFilters();
-
     } catch (err) {
-        console.error('Falha ao consultar Firestore:', err);
-        recordsBadge.innerText = 'Erro ao carregar dados';
-        showEmptyState(`Não foi possível carregar os preços: ${err.message || 'Verifique as Regras de Segurança (Security Rules) do Firestore.'}`);
+        console.error('Firestore Error:', err);
+        statusText.innerText = 'Erro ao consultar';
     }
 }
 
-// 6. Atualização do Badge de Sincronização
-function updateSyncBadge(lastUpdated) {
-    const badge = document.getElementById('lastUpdatedText');
-    if (lastUpdated) {
-        const dt = new Date(lastUpdated);
-        const formatted = dt.toLocaleString('pt-BR', { 
-            day: '2-digit', month: '2-digit', year: 'numeric',
-            hour: '2-digit', minute: '2-digit' 
-        });
-        badge.innerText = `Atualizado em ${formatted}`;
-    } else {
-        badge.innerText = `Sessão ativa e protegida`;
-    }
-}
-
-// 7. Popula Cidades no Dropdown
 function populateCityFilter(data) {
-    const citySelect = document.getElementById('citySelect');
-    const cities = [...new Set(data.map(item => item.municipio))].filter(Boolean).sort();
-    
-    citySelect.innerHTML = '<option value="ALL">Todas as Cidades</option>';
-    cities.forEach(city => {
-        const option = document.createElement('option');
-        option.value = city;
-        option.textContent = city;
-        citySelect.appendChild(option);
+    const select = document.getElementById('citySelect');
+    const cities = [...new Set(data.map(d => d.municipio))].filter(Boolean).sort();
+
+    select.innerHTML = '<option value="ALL">Todo o Estado (MT)</option>';
+    cities.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c;
+        opt.textContent = c;
+        select.appendChild(opt);
     });
 }
 
-// 8. Renderização dos KPI Cards
-function renderKpiCards() {
-    const container = document.getElementById('kpisContainer');
-    container.innerHTML = '';
-
-    const fuels = ['ETANOL', 'GASOLINA COMUM', 'GASOLINA ADITIVADA', 'DIESEL S10', 'DIESEL S500'];
-    
-    fuels.forEach(fuel => {
-        const fuelItems = state.filteredData.filter(d => d.desc_produto === fuel);
-        if (fuelItems.length === 0) return;
-
-        const cheapest = fuelItems.reduce((min, cur) => cur.valor < min.valor ? cur : min, fuelItems[0]);
-        const style = FUEL_COLORS[fuel] || { border: '#3b82f6', bg: 'rgba(59, 130, 246, 0.15)', icon: 'fa-gas-pump' };
-
-        const card = document.createElement('div');
-        card.className = 'kpi-card';
-        card.style.setProperty('--card-accent', style.border);
-        card.style.setProperty('--card-icon-bg', style.bg);
-
-        card.innerHTML = `
-            <div class="kpi-header">
-                <span class="kpi-title">${fuel}</span>
-                <div class="kpi-icon">
-                    <i class="fa-solid ${style.icon}"></i>
-                </div>
-            </div>
-            <div class="kpi-body">
-                <span class="kpi-price">R$ ${cheapest.valor.toFixed(2)}</span>
-                <span class="kpi-unit">/ litro</span>
-            </div>
-            <div class="kpi-footer">
-                <span class="kpi-station-name" title="${cheapest.nome_emissor}">
-                    <i class="fa-solid fa-store"></i> ${cheapest.nome_emissor}
-                </span>
-                <span><i class="fa-solid fa-location-dot"></i> ${cheapest.municipio}</span>
-            </div>
-        `;
-
-        container.appendChild(card);
-    });
-}
-
-// 9. Cálculo de Paridade Etanol vs Gasolina (Regra dos 70%)
-function renderParityCard() {
-    const parityRatioValue = document.getElementById('parityRatioValue');
-    const decisionBadge = document.getElementById('decisionBadge');
-    const decisionDesc = document.getElementById('decisionDesc');
-    const parityLocation = document.getElementById('parityLocation');
-
-    const baseData = state.currentCity === 'ALL' ? state.allData : state.allData.filter(d => d.municipio === state.currentCity);
-    
-    const etanolItems = baseData.filter(d => d.desc_produto === 'ETANOL');
-    const gasolinaItems = baseData.filter(d => d.desc_produto === 'GASOLINA COMUM');
-
-    parityLocation.innerText = state.currentCity === 'ALL' 
-        ? 'Média consolidada em todo o estado de Mato Grosso' 
-        : `Média calculada para o município de ${state.currentCity}`;
-
-    if (etanolItems.length === 0 || gasolinaItems.length === 0) {
-        parityRatioValue.innerText = '--%';
-        decisionBadge.className = 'decision-badge';
-        decisionBadge.innerText = 'Dados insuficientes';
-        decisionDesc.innerText = 'Não há dados simultâneos de Etanol e Gasolina para calcular a paridade.';
-        return;
-    }
-
-    const avgEtanol = etanolItems.reduce((sum, item) => sum + item.valor, 0) / etanolItems.length;
-    const avgGasolina = gasolinaItems.reduce((sum, item) => sum + item.valor, 0) / gasolinaItems.length;
-
-    const ratio = (avgEtanol / avgGasolina) * 100;
-    parityRatioValue.innerText = `${ratio.toFixed(1)}%`;
-
-    if (ratio < 70) {
-        const economy = (70 - ratio).toFixed(1);
-        decisionBadge.className = 'decision-badge etanol';
-        decisionBadge.innerHTML = `<i class="fa-solid fa-leaf"></i> Vantagem: ETANOL (+${economy}% mais econômico)`;
-        decisionDesc.innerText = `O preço do etanol (R$ ${avgEtanol.toFixed(2)}) representa ${ratio.toFixed(1)}% do valor da gasolina (R$ ${avgGasolina.toFixed(2)}). Como está abaixo de 70%, o etanol gera maior economia por km rodado.`;
-    } else {
-        decisionBadge.className = 'decision-badge gasolina';
-        decisionBadge.innerHTML = `<i class="fa-solid fa-gas-pump"></i> Vantagem: GASOLINA COMUM`;
-        decisionDesc.innerText = `O preço do etanol (R$ ${avgEtanol.toFixed(2)}) atingiu ${ratio.toFixed(1)}% da gasolina (R$ ${avgGasolina.toFixed(2)}). Como ultrapassou os 70%, a gasolina oferece melhor custo-benefício.`;
-    }
-}
-
-// 10. Inicialização e Renderização do Mapa Leaflet
+// ==========================================================
+// 3. Map with State of Mato Grosso Highlight (Leaflet)
+// ==========================================================
 function initMap() {
     if (state.map) return;
 
+    // Inicializa o mapa focado em MT
     state.map = L.map('map', {
-        center: DEFAULT_MT_CENTER,
-        zoom: 12,
+        zoomControl: true,
         scrollWheelZoom: true
-    });
+    }).fitBounds(MT_DEFAULT_BOUNDS);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-        maxZoom: 19
+    // Tiles limpos do CartoDB Dark Matter / Positron de alta performance
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const tileUrl = isDark 
+        ? 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
+        : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+
+    L.tileLayer(tileUrl, {
+        attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 18
     }).addTo(state.map);
 
     state.markersGroup = L.layerGroup().addTo(state.map);
+
+    // Carrega o polígono oficial da malha de Mato Grosso (IBGE UF 51)
+    loadMatoGrossoBoundary();
+}
+
+async function loadMatoGrossoBoundary() {
+    try {
+        // API Oficial do IBGE para o contorno do Estado de MT
+        const res = await fetch('https://servicodados.ibge.gov.br/api/v3/malhas/estados/51?formato=application/vnd.geo+json');
+        if (res.ok) {
+            const geojson = await res.json();
+            
+            if (state.mtBoundaryLayer) {
+                state.map.removeLayer(state.mtBoundaryLayer);
+            }
+
+            state.mtBoundaryLayer = L.geoJSON(geojson, {
+                style: {
+                    color: '#2563eb',       // Linha de contorno do Estado
+                    weight: 2.5,
+                    opacity: 0.85,
+                    dashArray: '4, 4',
+                    fillColor: '#2563eb',
+                    fillOpacity: 0.04
+                }
+            }).addTo(state.map);
+
+            state.mtBounds = state.mtBoundaryLayer.getBounds();
+        }
+    } catch (e) {
+        console.warn('Usando contorno padrão de MT:', e);
+    }
 }
 
 function renderMap() {
     initMap();
     state.markersGroup.clearLayers();
 
-    const validStations = state.filteredData.filter(d => d.latitude && d.longitude && !isNaN(d.latitude) && !isNaN(d.longitude));
+    const valid = state.filteredData.filter(d => d.latitude && d.longitude && !isNaN(d.latitude) && !isNaN(d.longitude));
+    document.getElementById('mapPostosCount').innerText = `${valid.length} postos mapeados`;
 
-    if (validStations.length === 0) {
-        state.map.setView(DEFAULT_MT_CENTER, 7);
+    if (valid.length === 0) {
+        if (state.mtBounds) state.map.fitBounds(state.mtBounds);
         return;
     }
 
-    const prices = validStations.map(d => d.valor).sort((a, b) => a - b);
+    const prices = valid.map(d => d.valor).sort((a, b) => a - b);
     const p25 = prices[Math.floor(prices.length * 0.25)] || prices[0];
     const p75 = prices[Math.floor(prices.length * 0.75)] || prices[prices.length - 1];
 
     const bounds = L.latLngBounds();
 
-    validStations.forEach(item => {
-        let pinClass = 'pin-medium';
+    valid.forEach(item => {
+        let tagClass = 'tag-medium';
         if (item.valor <= p25) {
-            pinClass = 'pin-cheapest';
+            tagClass = 'tag-cheapest';
         } else if (item.valor >= p75) {
-            pinClass = 'pin-expensive';
+            tagClass = 'tag-expensive';
         }
 
-        const iconHtml = `
-            <div class="custom-map-pin ${pinClass}">
-                <i class="fa-solid fa-gas-pump"></i>
-            </div>
-        `;
-
+        // Marcador em formato de tag de preço direto no mapa (R$ 4,19)
+        const markerHtml = `<div class="price-marker-tag ${tagClass}">R$ ${item.valor.toFixed(2)}</div>`;
         const customIcon = L.divIcon({
-            html: iconHtml,
-            className: 'leaflet-custom-marker',
-            iconSize: [32, 32],
-            iconAnchor: [16, 16],
-            popupAnchor: [0, -18]
+            html: markerHtml,
+            className: 'clean-map-icon',
+            iconSize: [60, 24],
+            iconAnchor: [30, 12],
+            popupAnchor: [0, -14]
         });
 
-        const fuelStyle = FUEL_COLORS[item.desc_produto] || { class: 'etanol' };
         const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${item.latitude},${item.longitude}`;
-
-        const popupContent = `
-            <div class="map-popup-card">
-                <span class="badge-fuel ${fuelStyle.class}">${item.desc_produto}</span>
-                <div class="popup-station-title">${item.nome_emissor}</div>
-                <div class="popup-price-tag">R$ ${item.valor.toFixed(2)} <small style="font-size:0.75rem;color:var(--text-muted)">/L</small></div>
-                <div class="popup-details">
-                    <span><i class="fa-solid fa-location-dot"></i> ${item.municipio}</span>
-                    <span><i class="fa-regular fa-clock"></i> ${formatDate(item.data_emissao)}</span>
-                    ${item.distancia > 0 ? `<span><i class="fa-solid fa-route"></i> ${item.distancia.toFixed(1)} km</span>` : ''}
+        const popupHtml = `
+            <div class="popup-content">
+                <div class="popup-title">${item.nome_emissor}</div>
+                <div class="popup-val">R$ ${item.valor.toFixed(2)} <span style="font-size:0.7rem;color:var(--text-muted)">/L</span></div>
+                <div class="popup-meta">
+                    <span><strong>Combustível:</strong> ${item.desc_produto}</span>
+                    <span><strong>Município:</strong> ${item.municipio}</span>
+                    ${item.distancia > 0 ? `<span><strong>Distância:</strong> ${item.distancia.toFixed(1)} km</span>` : ''}
+                    <span><strong>NF:</strong> ${formatDate(item.data_emissao)}</span>
                 </div>
-                <a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" class="popup-btn-route">
-                    <i class="fa-solid fa-diamond-turn-right"></i> Traçar Rota
+                <a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" class="popup-route">
+                    <i class="fa-solid fa-diamond-turn-right"></i> Traçar Rota no Google Maps
                 </a>
             </div>
         `;
 
         const marker = L.marker([item.latitude, item.longitude], { icon: customIcon })
-            .bindPopup(popupContent);
+            .bindPopup(popupHtml);
 
         state.markersGroup.addLayer(marker);
         bounds.extend([item.latitude, item.longitude]);
     });
 
-    if (bounds.isValid()) {
-        state.map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+    if (state.currentCity !== 'ALL' && bounds.isValid()) {
+        state.map.fitBounds(bounds, { padding: [30, 30], maxZoom: 14 });
     }
 
     setTimeout(() => {
         if (state.map) state.map.invalidateSize();
-    }, 200);
+    }, 150);
 }
 
-// 11. Aplicação dos Filtros
+// ==========================================================
+// 4. Filtering & Calculations
+// ==========================================================
 function applyFilters() {
-    let result = [...state.allData];
+    let list = [...state.allData];
 
     if (state.currentFuel !== 'ALL') {
-        result = result.filter(item => item.desc_produto === state.currentFuel);
+        list = list.filter(d => d.desc_produto === state.currentFuel);
     }
 
     if (state.currentCity !== 'ALL') {
-        result = result.filter(item => item.municipio === state.currentCity);
+        list = list.filter(d => d.municipio === state.currentCity);
     }
 
     if (state.searchQuery.trim() !== '') {
-        const query = state.searchQuery.toLowerCase().trim();
-        result = result.filter(item => 
-            (item.nome_emissor && item.nome_emissor.toLowerCase().includes(query)) ||
-            (item.municipio && item.municipio.toLowerCase().includes(query)) ||
-            (item.desc_produto && item.desc_produto.toLowerCase().includes(query)) ||
-            (item.id && item.id.toLowerCase().includes(query))
+        const q = state.searchQuery.toLowerCase().trim();
+        list = list.filter(d => 
+            d.nome_emissor.toLowerCase().includes(q) ||
+            d.municipio.toLowerCase().includes(q) ||
+            d.desc_produto.toLowerCase().includes(q)
         );
     }
 
     switch (state.currentSort) {
-        case 'price-asc':
-            result.sort((a, b) => a.valor - b.valor);
-            break;
-        case 'price-desc':
-            result.sort((a, b) => b.valor - a.valor);
-            break;
-        case 'date-desc':
-            result.sort((a, b) => new Date(b.data_emissao) - new Date(a.data_emissao));
-            break;
-        case 'distance-asc':
-            result.sort((a, b) => a.distancia - b.distancia);
-            break;
-        case 'name-asc':
-            result.sort((a, b) => a.nome_emissor.localeCompare(b.nome_emissor));
-            break;
+        case 'price-asc': list.sort((a, b) => a.valor - b.valor); break;
+        case 'price-desc': list.sort((a, b) => b.valor - a.valor); break;
+        case 'date-desc': list.sort((a, b) => new Date(b.data_emissao) - new Date(a.data_emissao)); break;
+        case 'distance-asc': list.sort((a, b) => a.distancia - b.distancia); break;
     }
 
-    state.filteredData = result;
+    state.filteredData = list;
     state.currentPage = 1;
 
-    renderParityCard();
-    renderKpiCards();
+    renderKPIs();
+    renderParity();
     renderMap();
     renderCharts();
     renderTable();
     renderPagination();
 }
 
-// 12. Renderização dos Gráficos (Chart.js)
+function renderKPIs() {
+    const fuels = [
+        { key: 'ETANOL', valId: 'kpiEtanolPrice', stId: 'kpiEtanolStation' },
+        { key: 'GASOLINA COMUM', valId: 'kpiGasolinaPrice', stId: 'kpiGasolinaStation' },
+        { key: 'GASOLINA ADITIVADA', valId: 'kpiAditivadaPrice', stId: 'kpiAditivadaStation' },
+        { key: 'DIESEL S10', valId: 'kpiDieselPrice', stId: 'kpiDieselStation' }
+    ];
+
+    const baseData = state.currentCity === 'ALL' ? state.allData : state.allData.filter(d => d.municipio === state.currentCity);
+
+    fuels.forEach(f => {
+        const items = baseData.filter(d => d.desc_produto === f.key);
+        const valElem = document.getElementById(f.valId);
+        const stElem = document.getElementById(f.stId);
+
+        if (items.length > 0) {
+            const min = items.reduce((a, b) => a.valor < b.valor ? a : b);
+            valElem.innerText = `R$ ${min.valor.toFixed(2)}`;
+            stElem.innerText = `${min.nome_emissor} (${min.municipio})`;
+        } else {
+            valElem.innerText = 'R$ --';
+            stElem.innerText = 'Sem dados recentes';
+        }
+    });
+}
+
+function renderParity() {
+    const baseData = state.currentCity === 'ALL' ? state.allData : state.allData.filter(d => d.municipio === state.currentCity);
+    const etanol = baseData.filter(d => d.desc_produto === 'ETANOL');
+    const gasolina = baseData.filter(d => d.desc_produto === 'GASOLINA COMUM');
+
+    const ratioElem = document.getElementById('parityRatioValue');
+    const verdictElem = document.getElementById('parityVerdict');
+    const descElem = document.getElementById('parityDesc');
+
+    if (etanol.length > 0 && gasolina.length > 0) {
+        const avgE = etanol.reduce((s, i) => s + i.valor, 0) / etanol.length;
+        const avgG = gasolina.reduce((s, i) => s + i.valor, 0) / gasolina.length;
+        const ratio = (avgE / avgG) * 100;
+
+        ratioElem.innerText = `${ratio.toFixed(1)}%`;
+
+        if (ratio <= 70) {
+            const eco = (70 - ratio).toFixed(1);
+            verdictElem.className = 'parity-verdict verdict-etanol';
+            verdictElem.innerText = 'Vantagem ETANOL';
+            descElem.innerText = `Etanol (R$ ${avgE.toFixed(2)}) abaixo do teto de 70% da Gasolina (R$ ${avgG.toFixed(2)}). Economia de ~${eco}%.`;
+        } else {
+            verdictElem.className = 'parity-verdict verdict-gasolina';
+            verdictElem.innerText = 'Vantagem GASOLINA';
+            descElem.innerText = `Etanol (R$ ${avgE.toFixed(2)}) atingiu ${ratio.toFixed(1)}% da Gasolina. Gasolina é mais vantajosa.`;
+        }
+    } else {
+        ratioElem.innerText = '--%';
+        verdictElem.className = 'parity-verdict';
+        verdictElem.innerText = 'Sem dados';
+        descElem.innerText = 'Necessita de dados de Etanol e Gasolina.';
+    }
+}
+
+// ==========================================================
+// 5. Chart.js Visualizations
+// ==========================================================
 function renderCharts() {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const textColor = isDark ? '#9ca3af' : '#4b5563';
-    const gridColor = isDark ? '#2a3449' : '#e5e7eb';
+    const textColor = isDark ? '#94a3b8' : '#475569';
+    const gridColor = isDark ? '#1e293b' : '#e2e8f0';
 
-    // Gráfico 1: Evolução Temporal
-    const datesSet = new Set();
-    const timeSeriesData = {
-        'ETANOL': {},
-        'GASOLINA COMUM': {},
-        'GASOLINA ADITIVADA': {},
-        'DIESEL S10': {}
-    };
-
+    const datesMap = {};
     state.filteredData.forEach(d => {
         if (!d.data_emissao) return;
         const day = d.data_emissao.split('T')[0].split(' ')[0];
-        datesSet.add(day);
-
-        if (timeSeriesData[d.desc_produto]) {
-            if (!timeSeriesData[d.desc_produto][day]) {
-                timeSeriesData[d.desc_produto][day] = [];
-            }
-            timeSeriesData[d.desc_produto][day].push(d.valor);
-        }
+        if (!datesMap[day]) datesMap[day] = {};
+        if (!datesMap[day][d.desc_produto]) datesMap[day][d.desc_produto] = [];
+        datesMap[day][d.desc_produto].push(d.valor);
     });
 
-    const sortedDates = Array.from(datesSet).sort();
-    const formattedLabels = sortedDates.map(dt => {
-        const parts = dt.split('-');
-        return parts.length === 3 ? `${parts[2]}/${parts[1]}` : dt;
+    const sortedDays = Object.keys(datesMap).sort();
+    const dayLabels = sortedDays.map(day => {
+        const p = day.split('-');
+        return p.length === 3 ? `${p[2]}/${p[1]}` : day;
     });
 
-    const datasetsEvolution = [
-        {
-            label: 'Etanol',
-            data: sortedDates.map(d => {
-                const vals = timeSeriesData['ETANOL'][d];
-                return vals ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) : null;
-            }),
-            borderColor: '#10b981',
-            backgroundColor: 'rgba(16, 185, 129, 0.1)',
-            tension: 0.3,
-            fill: false
-        },
-        {
-            label: 'Gasolina Comum',
-            data: sortedDates.map(d => {
-                const vals = timeSeriesData['GASOLINA COMUM'][d];
-                return vals ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) : null;
-            }),
-            borderColor: '#f59e0b',
-            backgroundColor: 'rgba(245, 158, 11, 0.1)',
-            tension: 0.3,
-            fill: false
-        },
-        {
-            label: 'Gasolina Aditivada',
-            data: sortedDates.map(d => {
-                const vals = timeSeriesData['GASOLINA ADITIVADA'][d];
-                return vals ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) : null;
-            }),
-            borderColor: '#ec4899',
-            backgroundColor: 'rgba(236, 72, 153, 0.1)',
-            tension: 0.3,
-            fill: false
-        },
-        {
-            label: 'Diesel S10',
-            data: sortedDates.map(d => {
-                const vals = timeSeriesData['DIESEL S10'][d];
-                return vals ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) : null;
-            }),
-            borderColor: '#06b6d4',
-            backgroundColor: 'rgba(6, 182, 212, 0.1)',
-            tension: 0.3,
-            fill: false
-        }
-    ];
-
+    // Gráfico 1: Evolução
     const ctxEvol = document.getElementById('priceEvolutionChart').getContext('2d');
-    if (state.charts.priceEvolution) {
-        state.charts.priceEvolution.destroy();
-    }
+    if (state.charts.priceEvolution) state.charts.priceEvolution.destroy();
 
     state.charts.priceEvolution = new Chart(ctxEvol, {
         type: 'line',
         data: {
-            labels: formattedLabels.length > 0 ? formattedLabels : ['Sem dados'],
-            datasets: datasetsEvolution
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
-            plugins: { legend: { labels: { color: textColor } } },
-            scales: {
-                x: { ticks: { color: textColor }, grid: { color: gridColor } },
-                y: { ticks: { color: textColor }, grid: { color: gridColor }, title: { display: true, text: 'Preço Médio (R$)', color: textColor } }
-            }
-        }
-    });
-
-    // Gráfico 2: Paridade
-    const parityValues = sortedDates.map(d => {
-        const ets = timeSeriesData['ETANOL'][d];
-        const gas = timeSeriesData['GASOLINA COMUM'][d];
-        if (ets && gas && ets.length > 0 && gas.length > 0) {
-            const avgE = ets.reduce((a, b) => a + b, 0) / ets.length;
-            const avgG = gas.reduce((a, b) => a + b, 0) / gas.length;
-            return ((avgE / avgG) * 100).toFixed(1);
-        }
-        return null;
-    });
-
-    const ctxParity = document.getElementById('parityChart').getContext('2d');
-    if (state.charts.parity) {
-        state.charts.parity.destroy();
-    }
-
-    state.charts.parity = new Chart(ctxParity, {
-        type: 'line',
-        data: {
-            labels: formattedLabels.length > 0 ? formattedLabels : ['Sem dados'],
+            labels: dayLabels.length > 0 ? dayLabels : ['Sem dados'],
             datasets: [
                 {
-                    label: 'Paridade Etanol / Gasolina (%)',
-                    data: parityValues,
-                    borderColor: '#3b82f6',
-                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                    fill: true,
-                    tension: 0.3
+                    label: 'Etanol',
+                    data: sortedDays.map(d => calcAvg(datesMap[d]['ETANOL'])),
+                    borderColor: '#10b981',
+                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    borderWidth: 2,
+                    tension: 0.25,
+                    pointRadius: 3
                 },
                 {
-                    label: 'Limite 70% (Vantagem Etanol)',
-                    data: sortedDates.map(() => 70),
-                    borderColor: '#ef4444',
-                    borderDash: [6, 6],
+                    label: 'Gasolina Comum',
+                    data: sortedDays.map(d => calcAvg(datesMap[d]['GASOLINA COMUM'])),
+                    borderColor: '#f59e0b',
+                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
                     borderWidth: 2,
-                    pointRadius: 0,
-                    fill: false
+                    tension: 0.25,
+                    pointRadius: 3
+                },
+                {
+                    label: 'Gasolina Aditivada',
+                    data: sortedDays.map(d => calcAvg(datesMap[d]['GASOLINA ADITIVADA'])),
+                    borderColor: '#ec4899',
+                    borderWidth: 2,
+                    tension: 0.25,
+                    pointRadius: 3
+                },
+                {
+                    label: 'Diesel S10',
+                    data: sortedDays.map(d => calcAvg(datesMap[d]['DIESEL S10'])),
+                    borderColor: '#0ea5e9',
+                    borderWidth: 2,
+                    tension: 0.25,
+                    pointRadius: 3
                 }
             ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: { legend: { labels: { color: textColor } } },
+            plugins: { legend: { labels: { color: textColor, boxWidth: 12 } } },
             scales: {
                 x: { ticks: { color: textColor }, grid: { color: gridColor } },
-                y: { ticks: { color: textColor }, grid: { color: gridColor }, title: { display: true, text: 'Relação (%)', color: textColor }, suggestedMin: 60, suggestedMax: 80 }
+                y: { ticks: { color: textColor }, grid: { color: gridColor } }
             }
         }
     });
 
-    // Gráfico 3: Cidade
-    const cityData = {};
-    state.filteredData.forEach(d => {
-        if (!cityData[d.municipio]) cityData[d.municipio] = [];
-        cityData[d.municipio].push(d.valor);
+    // Gráfico 2: Paridade
+    const parityVals = sortedDays.map(d => {
+        const e = calcAvg(datesMap[d]['ETANOL']);
+        const g = calcAvg(datesMap[d]['GASOLINA COMUM']);
+        return (e && g) ? ((e / g) * 100).toFixed(1) : null;
     });
 
-    const cities = Object.keys(cityData);
-    const minPrices = cities.map(c => Math.min(...cityData[c]));
-    const avgPrices = cities.map(c => (cityData[c].reduce((a, b) => a + b, 0) / cityData[c].length).toFixed(2));
+    const ctxPar = document.getElementById('parityChart').getContext('2d');
+    if (state.charts.parity) state.charts.parity.destroy();
 
-    const ctxComp = document.getElementById('cityComparisonChart').getContext('2d');
-    if (state.charts.cityComparison) {
-        state.charts.cityComparison.destroy();
-    }
-
-    state.charts.cityComparison = new Chart(ctxComp, {
-        type: 'bar',
+    state.charts.parity = new Chart(ctxPar, {
+        type: 'line',
         data: {
-            labels: cities,
+            labels: dayLabels.length > 0 ? dayLabels : ['Sem dados'],
             datasets: [
-                { label: 'Menor Preço (R$)', data: minPrices, backgroundColor: '#10b981', borderRadius: 6 },
-                { label: 'Preço Médio (R$)', data: avgPrices, backgroundColor: '#3b82f6', borderRadius: 6 }
+                {
+                    label: 'Relação (%)',
+                    data: parityVals,
+                    borderColor: '#2563eb',
+                    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                    fill: true,
+                    borderWidth: 2,
+                    tension: 0.25
+                },
+                {
+                    label: 'Teto 70%',
+                    data: sortedDays.map(() => 70),
+                    borderColor: '#ef4444',
+                    borderDash: [5, 5],
+                    borderWidth: 1.5,
+                    pointRadius: 0
+                }
             ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: { legend: { labels: { color: textColor } } },
+            plugins: { legend: { labels: { color: textColor, boxWidth: 12 } } },
             scales: {
                 x: { ticks: { color: textColor }, grid: { color: gridColor } },
-                y: { ticks: { color: textColor }, grid: { color: gridColor }, beginAtZero: false }
+                y: { ticks: { color: textColor }, grid: { color: gridColor }, suggestedMin: 60, suggestedMax: 80 }
+            }
+        }
+    });
+
+    // Gráfico 3: Cidades
+    const cityMap = {};
+    state.filteredData.forEach(d => {
+        if (!cityMap[d.municipio]) cityMap[d.municipio] = [];
+        cityMap[d.municipio].push(d.valor);
+    });
+
+    const cities = Object.keys(cityMap);
+    const minPrices = cities.map(c => Math.min(...cityMap[c]));
+    const avgPrices = cities.map(c => (cityMap[c].reduce((a, b) => a + b, 0) / cityMap[c].length).toFixed(2));
+
+    const ctxCity = document.getElementById('cityComparisonChart').getContext('2d');
+    if (state.charts.cityComparison) state.charts.cityComparison.destroy();
+
+    state.charts.cityComparison = new Chart(ctxCity, {
+        type: 'bar',
+        data: {
+            labels: cities,
+            datasets: [
+                { label: 'Menor Preço (R$)', data: minPrices, backgroundColor: '#10b981', borderRadius: 4 },
+                { label: 'Média (R$)', data: avgPrices, backgroundColor: '#2563eb', borderRadius: 4 }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: textColor, boxWidth: 12 } } },
+            scales: {
+                x: { ticks: { color: textColor }, grid: { color: gridColor } },
+                y: { ticks: { color: textColor }, grid: { color: gridColor } }
             }
         }
     });
 }
 
-// 13. Renderização da Tabela
+function calcAvg(arr) {
+    if (!arr || arr.length === 0) return null;
+    return parseFloat((arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(2));
+}
+
+// ==========================================================
+// 6. Data Table & Pagination
+// ==========================================================
 function renderTable() {
     const tbody = document.getElementById('tableBody');
-    const recordsBadge = document.getElementById('recordsBadge');
-    
-    recordsBadge.innerText = `Exibindo ${state.filteredData.length} registros`;
+    document.getElementById('tableTotalCount').innerText = `${state.filteredData.length} registros`;
 
     if (state.filteredData.length === 0) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="8">
-                    <div class="empty-state">
-                        <i class="fa-solid fa-gas-pump"></i>
-                        <p>Nenhum preço encontrado para os filtros selecionados.</p>
-                    </div>
-                </td>
-            </tr>
-        `;
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--text-muted)">Nenhum registro encontrado.</td></tr>`;
         return;
     }
 
-    const startIndex = (state.currentPage - 1) * state.itemsPerPage;
-    const endIndex = startIndex + state.itemsPerPage;
-    const pageItems = state.filteredData.slice(startIndex, endIndex);
-
-    const lowestPrice = Math.min(...state.filteredData.map(d => d.valor));
+    const start = (state.currentPage - 1) * state.itemsPerPage;
+    const pageItems = state.filteredData.slice(start, start + state.itemsPerPage);
+    const minPrice = Math.min(...state.filteredData.map(d => d.valor));
 
     tbody.innerHTML = '';
     pageItems.forEach(item => {
-        const isLowest = item.valor === lowestPrice;
-        const fuelStyle = FUEL_COLORS[item.desc_produto] || { class: 'etanol' };
-        
-        const dateStr = item.data_emissao ? formatDate(item.data_emissao) : '-';
-        const mapsUrl = (item.latitude && item.longitude)
-            ? `https://www.google.com/maps/search/?api=1&query=${item.latitude},${item.longitude}`
-            : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.nome_emissor + ' ' + item.municipio + ' MT')}`;
+        const isMin = item.valor === minPrice;
+        const cfg = FUEL_CONFIG[item.desc_produto] || { class: 'fuel-etanol' };
+        const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${item.latitude || ''},${item.longitude || ''}`;
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td>
-                ${isLowest ? '<span class="badge-cheapest"><i class="fa-solid fa-star"></i> Menor Preço</span>' : '<span style="color:var(--text-muted);font-size:0.75rem;">—</span>'}
+                ${isMin ? '<span class="tag-badge" style="background:#064e3b;color:#6ee7b7">Menor Preço</span>' : '<span style="color:var(--text-faint)">—</span>'}
             </td>
+            <td><strong>${item.nome_emissor}</strong></td>
+            <td><span class="tag-badge ${cfg.class}">${item.desc_produto}</span></td>
+            <td><span class="price-num">R$ ${item.valor.toFixed(2)}</span></td>
+            <td>${item.municipio}</td>
+            <td>${item.distancia > 0 ? `${item.distancia.toFixed(1)} km` : '-'}</td>
+            <td><span style="color:var(--text-muted);font-size:0.75rem">${formatDate(item.data_emissao)}</span></td>
             <td>
-                <div class="station-cell">
-                    <span class="station-title">${item.nome_emissor}</span>
-                    <span class="station-id">ID: ${item.id}</span>
-                </div>
-            </td>
-            <td>
-                <span class="badge-fuel ${fuelStyle.class}">
-                    ${item.desc_produto}
-                </span>
-            </td>
-            <td>
-                <div class="price-cell">
-                    R$ ${item.valor.toFixed(2)} <small>/L</small>
-                </div>
-            </td>
-            <td>
-                <strong>${item.municipio}</strong>
-            </td>
-            <td>
-                ${item.distancia > 0 ? `<i class="fa-solid fa-route"></i> ${item.distancia.toFixed(1)} km` : '-'}
-            </td>
-            <td>
-                <span style="font-size: 0.8rem; color: var(--text-secondary);">
-                    ${dateStr}
-                </span>
-            </td>
-            <td>
-                <a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" class="btn-map" title="Ver no Google Maps">
-                    <i class="fa-solid fa-map-location-dot"></i> Rota
+                <a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" class="btn-table-route">
+                    <i class="fa-solid fa-location-arrow"></i> Rota
                 </a>
             </td>
         `;
@@ -724,174 +622,85 @@ function renderTable() {
     });
 }
 
-// 14. Paginação
 function renderPagination() {
     const totalPages = Math.ceil(state.filteredData.length / state.itemsPerPage) || 1;
-    const paginationInfo = document.getElementById('paginationInfo');
-    const paginationControls = document.getElementById('paginationControls');
+    document.getElementById('pageInfoText').innerText = `Página ${state.currentPage} de ${totalPages}`;
+    const container = document.getElementById('paginationControls');
+    container.innerHTML = '';
 
-    paginationInfo.innerText = `Página ${state.currentPage} de ${totalPages}`;
-    paginationControls.innerHTML = '';
+    const prev = document.createElement('button');
+    prev.className = 'p-btn';
+    prev.innerHTML = '<i class="fa-solid fa-chevron-left"></i>';
+    prev.disabled = state.currentPage === 1;
+    prev.addEventListener('click', () => { state.currentPage--; renderTable(); renderPagination(); });
+    container.appendChild(prev);
 
-    const prevBtn = document.createElement('button');
-    prevBtn.className = 'page-btn';
-    prevBtn.innerHTML = '<i class="fa-solid fa-chevron-left"></i>';
-    prevBtn.disabled = state.currentPage === 1;
-    prevBtn.addEventListener('click', () => {
-        if (state.currentPage > 1) {
-            state.currentPage--;
-            renderTable();
-            renderPagination();
-        }
-    });
-    paginationControls.appendChild(prevBtn);
-
-    const maxVisiblePages = 5;
-    let startPage = Math.max(1, state.currentPage - Math.floor(maxVisiblePages / 2));
-    let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
-
-    if (endPage - startPage < maxVisiblePages - 1) {
-        startPage = Math.max(1, endPage - maxVisiblePages + 1);
+    for (let i = 1; i <= Math.min(totalPages, 5); i++) {
+        const btn = document.createElement('button');
+        btn.className = `p-btn ${i === state.currentPage ? 'active' : ''}`;
+        btn.innerText = i;
+        btn.addEventListener('click', () => { state.currentPage = i; renderTable(); renderPagination(); });
+        container.appendChild(btn);
     }
 
-    for (let i = startPage; i <= endPage; i++) {
-        const pageBtn = document.createElement('button');
-        pageBtn.className = `page-btn ${i === state.currentPage ? 'active' : ''}`;
-        pageBtn.innerText = i;
-        pageBtn.addEventListener('click', () => {
-            state.currentPage = i;
-            renderTable();
-            renderPagination();
-        });
-        paginationControls.appendChild(pageBtn);
-    }
-
-    const nextBtn = document.createElement('button');
-    nextBtn.className = 'page-btn';
-    nextBtn.innerHTML = '<i class="fa-solid fa-chevron-right"></i>';
-    nextBtn.disabled = state.currentPage === totalPages;
-    nextBtn.addEventListener('click', () => {
-        if (state.currentPage < totalPages) {
-            state.currentPage++;
-            renderTable();
-            renderPagination();
-        }
-    });
-    paginationControls.appendChild(nextBtn);
+    const next = document.createElement('button');
+    next.className = 'p-btn';
+    next.innerHTML = '<i class="fa-solid fa-chevron-right"></i>';
+    next.disabled = state.currentPage === totalPages;
+    next.addEventListener('click', () => { state.currentPage++; renderTable(); renderPagination(); });
+    container.appendChild(next);
 }
 
-// 15. Alternância de Telas (Auth Gate vs Dashboard)
-function showLoginView() {
-    document.getElementById('authGate').style.display = 'flex';
-    document.getElementById('dashboardContent').style.display = 'none';
-    document.getElementById('userProfile').style.display = 'none';
-    document.getElementById('lastUpdatedText').innerText = 'Aguardando login...';
-}
-
-function showDashboardView(user) {
-    document.getElementById('authGate').style.display = 'none';
-    document.getElementById('dashboardContent').style.display = 'block';
-    document.getElementById('userProfile').style.display = 'flex';
-    document.getElementById('userEmailText').innerText = user.email || user.displayName || 'Usuário Google';
-}
-
-function showAuthAlert(msg, type = 'error') {
-    const alertBox = document.getElementById('authAlert');
-    const msgSpan = document.getElementById('authAlertMsg');
-    msgSpan.innerText = msg;
-    alertBox.className = `auth-alert ${type}`;
-    alertBox.style.display = 'flex';
-}
-
-function hideAuthAlert() {
-    document.getElementById('authAlert').style.display = 'none';
-}
-
-function setLoginLoading(isLoading) {
-    const btn = document.getElementById('loginSubmitBtn');
-    const textSpan = document.getElementById('btnSubmitText');
-    const spinner = document.getElementById('btnSubmitSpinner');
-    btn.disabled = isLoading;
-    textSpan.style.display = isLoading ? 'none' : 'inline-flex';
-    spinner.style.display = isLoading ? 'inline-block' : 'none';
-}
-
-function showEmptyState(msg) {
-    const tbody = document.getElementById('tableBody');
-    tbody.innerHTML = `
-        <tr>
-            <td colspan="8">
-                <div class="empty-state">
-                    <i class="fa-solid fa-triangle-exclamation"></i>
-                    <p>${msg}</p>
-                </div>
-            </td>
-        </tr>
-    `;
-}
-
-// 16. Event Listeners
+// ==========================================================
+// 7. UI Controls & Listeners
+// ==========================================================
 function initEventListeners() {
-    // Login com Google
     document.getElementById('btnGoogleLogin').addEventListener('click', handleGoogleLogin);
-
-    // Form de Login com E-mail
-    document.getElementById('loginForm').addEventListener('submit', handleLogin);
+    document.getElementById('loginForm').addEventListener('submit', handleEmailLogin);
     document.getElementById('logoutBtn').addEventListener('click', handleLogout);
 
-    const togglePassBtn = document.getElementById('togglePasswordBtn');
-    const passInput = document.getElementById('loginPassword');
-    const eyeIcon = document.getElementById('eyeIcon');
-    togglePassBtn.addEventListener('click', () => {
-        const isPass = passInput.type === 'password';
-        passInput.type = isPass ? 'text' : 'password';
-        eyeIcon.className = isPass ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye';
+    document.getElementById('togglePasswordBtn').addEventListener('click', () => {
+        const inp = document.getElementById('loginPassword');
+        const isPass = inp.type === 'password';
+        inp.type = isPass ? 'text' : 'password';
+        document.getElementById('eyeIcon').className = isPass ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye';
     });
 
-    const configToggleBtn = document.getElementById('configToggleBtn');
-    const configContent = document.getElementById('configContent');
-    configToggleBtn.addEventListener('click', () => {
-        const isVisible = configContent.style.display === 'block';
-        configContent.style.display = isVisible ? 'none' : 'block';
+    document.getElementById('configToggleBtn').addEventListener('click', () => {
+        const p = document.getElementById('configContent');
+        p.style.display = p.style.display === 'block' ? 'none' : 'block';
     });
 
     document.getElementById('saveConfigBtn').addEventListener('click', () => {
-        const apiKey = document.getElementById('cfgApiKey').value.trim();
-        const projectId = document.getElementById('cfgProjectId').value.trim();
-        const authDomain = document.getElementById('cfgAuthDomain').value.trim();
-
-        if (!apiKey || !projectId) {
-            alert('Por favor, preencha a API Key e o Project ID.');
-            return;
+        const key = document.getElementById('cfgApiKey').value.trim();
+        const proj = document.getElementById('cfgProjectId').value.trim();
+        if (key && proj) {
+            localStorage.setItem('firebase_api_key', key);
+            localStorage.setItem('firebase_project_id', proj);
+            alert('Configurações salvas!');
+            document.getElementById('configContent').style.display = 'none';
+            initFirebase();
         }
-
-        localStorage.setItem('firebase_api_key', apiKey);
-        localStorage.setItem('firebase_project_id', projectId);
-        if (authDomain) localStorage.setItem('firebase_auth_domain', authDomain);
-
-        alert('Chaves do Firebase salvas no seu navegador!');
-        configContent.style.display = 'none';
-        initFirebase();
     });
 
-    document.getElementById('btnRecenterMap').addEventListener('click', () => {
-        if (state.map && state.markersGroup) {
-            const layers = state.markersGroup.getLayers();
-            if (layers.length > 0) {
-                const group = L.featureGroup(layers);
-                state.map.fitBounds(group.getBounds(), { padding: [40, 40], maxZoom: 14 });
+    // Enquadrar Estado de MT
+    document.getElementById('btnFitMT').addEventListener('click', () => {
+        if (state.map) {
+            if (state.mtBounds) {
+                state.map.fitBounds(state.mtBounds, { padding: [20, 20] });
             } else {
-                state.map.setView(DEFAULT_MT_CENTER, 12);
+                state.map.fitBounds(MT_DEFAULT_BOUNDS);
             }
         }
     });
 
-    const pills = document.querySelectorAll('#fuelPills .pill-btn');
-    pills.forEach(pill => {
-        pill.addEventListener('click', () => {
-            pills.forEach(p => p.classList.remove('active'));
-            pill.classList.add('active');
-            state.currentFuel = pill.getAttribute('data-fuel');
+    // Chips de Combustível
+    const chips = document.querySelectorAll('#fuelSelector .filter-chip');
+    chips.forEach(chip => {
+        chip.addEventListener('click', () => {
+            chips.forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            state.currentFuel = chip.getAttribute('data-fuel');
             applyFilters();
         });
     });
@@ -907,117 +716,92 @@ function initEventListeners() {
     });
 
     const searchInput = document.getElementById('searchInput');
-    const clearSearchBtn = document.getElementById('clearSearchBtn');
-    let debounceTimeout;
+    const clearBtn = document.getElementById('clearSearchBtn');
+    let debounce;
     searchInput.addEventListener('input', (e) => {
-        const val = e.target.value;
-        clearSearchBtn.style.display = val ? 'block' : 'none';
-        clearTimeout(debounceTimeout);
-        debounceTimeout = setTimeout(() => {
-            state.searchQuery = val;
+        const v = e.target.value;
+        clearBtn.style.display = v ? 'block' : 'none';
+        clearTimeout(debounce);
+        debounce = setTimeout(() => {
+            state.searchQuery = v;
             applyFilters();
-        }, 300);
+        }, 250);
     });
 
-    clearSearchBtn.addEventListener('click', () => {
+    clearBtn.addEventListener('click', () => {
         searchInput.value = '';
-        clearSearchBtn.style.display = 'none';
+        clearBtn.style.display = 'none';
         state.searchQuery = '';
-        applyFilters();
-    });
-
-    document.getElementById('resetFiltersBtn').addEventListener('click', () => {
-        state.currentFuel = 'ALL';
-        state.currentCity = 'ALL';
-        state.searchQuery = '';
-        state.currentSort = 'price-asc';
-
-        pills.forEach(p => p.classList.toggle('active', p.getAttribute('data-fuel') === 'ALL'));
-        document.getElementById('citySelect').value = 'ALL';
-        document.getElementById('sortSelect').value = 'price-asc';
-        searchInput.value = '';
-        clearSearchBtn.style.display = 'none';
-
         applyFilters();
     });
 
     document.getElementById('btnRefreshData').addEventListener('click', loadDataFromFirestore);
     document.getElementById('btnExportCSV').addEventListener('click', exportToCSV);
-    document.getElementById('btnExportJSON').addEventListener('click', exportToJSON);
     document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
 }
 
-// 17. Funções Utilitárias & Exportação
-function formatDate(dateStr) {
+function showAuth() {
+    document.getElementById('authGate').style.display = 'flex';
+    document.getElementById('dashboardContent').style.display = 'none';
+    document.getElementById('userSession').style.display = 'none';
+    document.getElementById('syncStatusText').innerText = 'Acesso restrito';
+}
+
+function showDashboard(user) {
+    document.getElementById('authGate').style.display = 'none';
+    document.getElementById('dashboardContent').style.display = 'block';
+    document.getElementById('userSession').style.display = 'flex';
+    document.getElementById('userEmailLabel').innerText = user.email || 'Usuário Google';
+}
+
+function showAuthAlert(msg, type = 'error') {
+    const a = document.getElementById('authAlert');
+    document.getElementById('authAlertMsg').innerText = msg;
+    a.style.display = 'flex';
+}
+
+function hideAuthAlert() {
+    document.getElementById('authAlert').style.display = 'none';
+}
+
+function setLoginLoading(isLoading) {
+    document.getElementById('loginSubmitBtn').disabled = isLoading;
+    document.getElementById('btnSubmitText').style.display = isLoading ? 'none' : 'inline';
+    document.getElementById('btnSubmitSpinner').style.display = isLoading ? 'inline-block' : 'none';
+}
+
+function formatDate(str) {
     try {
-        const dt = new Date(dateStr);
-        return dt.toLocaleString('pt-BR', {
-            day: '2-digit', month: '2-digit', year: 'numeric',
-            hour: '2-digit', minute: '2-digit'
-        });
-    } catch {
-        return dateStr;
-    }
+        const dt = new Date(str);
+        return dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+    } catch { return str; }
 }
 
 function exportToCSV() {
     if (state.filteredData.length === 0) return;
-
     const headers = ['ID', 'Posto', 'Combustivel', 'Preco', 'Municipio', 'Distancia_KM', 'Data_Emissao'];
     const rows = state.filteredData.map(item => [
-        `"${item.id}"`,
-        `"${(item.nome_emissor || '').replace(/"/g, '""')}"`,
-        `"${item.desc_produto}"`,
-        item.valor,
-        `"${item.municipio}"`,
-        item.distancia,
-        `"${item.data_emissao}"`
+        `"${item.id}"`, `"${item.nome_emissor.replace(/"/g, '""')}"`, `"${item.desc_produto}"`,
+        item.valor, `"${item.municipio}"`, item.distancia, `"${item.data_emissao}"`
     ]);
-
-    const csvContent = "data:text/csv;charset=utf-8," + 
-        [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `menor_preco_mt_${new Date().toISOString().slice(0,10)}.csv`);
-    document.body.appendChild(link);
+    const blob = new Blob([ [headers.join(','), ...rows.map(e => e.join(','))].join('\n') ], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `combustiveis_mt_${new Date().toISOString().slice(0,10)}.csv`;
     link.click();
-    document.body.removeChild(link);
-}
-
-function exportToJSON() {
-    if (state.filteredData.length === 0) return;
-
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state.filteredData, null, 2));
-    const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `menor_preco_mt_${new Date().toISOString().slice(0,10)}.json`);
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
 }
 
 function initTheme() {
-    const savedTheme = localStorage.getItem('app-theme') || 'dark';
-    document.documentElement.setAttribute('data-theme', savedTheme);
-    updateThemeIcon(savedTheme);
+    const saved = localStorage.getItem('app-theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', saved);
+    document.getElementById('themeIcon').className = saved === 'dark' ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
 }
 
 function toggleTheme() {
-    const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
-    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', newTheme);
-    localStorage.setItem('app-theme', newTheme);
-    updateThemeIcon(newTheme);
+    const curr = document.documentElement.getAttribute('data-theme') || 'dark';
+    const next = curr === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('app-theme', next);
+    document.getElementById('themeIcon').className = next === 'dark' ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
     renderCharts();
-}
-
-function updateThemeIcon(theme) {
-    const icon = document.getElementById('themeIcon');
-    if (theme === 'dark') {
-        icon.className = 'fa-solid fa-moon';
-    } else {
-        icon.className = 'fa-solid fa-sun';
-    }
 }

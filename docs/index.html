@@ -3,18 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Menor Preço MT | Painel Seguro & Mapa (Firebase)</title>
-    <meta name="description" content="Acompanhe os menores preços de combustíveis coletados da SEFAZ-MT com mapa interativo, evolução histórica e paridade etanol/gasolina via Google Firebase.">
+    <title>Monitor de Preços de Combustíveis | Mato Grosso (SEFAZ-MT)</title>
+    <meta name="description" content="Painel analítico de monitoramento de preços de combustíveis em Mato Grosso com mapa geoespacial, paridade etanol/gasolina e evolução temporal.">
     
-    <!-- Google Fonts -->
+    <!-- Google Fonts: Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     
     <!-- Font Awesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
-    <!-- Leaflet CSS & JS for Interactive Map -->
+    <!-- Leaflet CSS & JS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
@@ -26,375 +26,314 @@
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
-    <!-- Firebase Project Config -->
+    <!-- Configurações do Projeto -->
     <script src="config.js"></script>
 
-    <!-- Custom CSS -->
+    <!-- Folha de Estilos -->
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- Header / Navbar -->
-    <header class="navbar">
-        <div class="nav-container">
-            <div class="nav-brand">
-                <div class="brand-icon">
+    <!-- Top Navigation Bar -->
+    <header class="app-header">
+        <div class="header-container">
+            <div class="brand">
+                <div class="brand-logo">
                     <i class="fa-solid fa-gas-pump"></i>
                 </div>
-                <div class="brand-text">
-                    <span class="brand-title">MENOR PREÇO <strong>MT</strong></span>
-                    <span class="brand-badge"><span class="pulse-dot"></span> Google Firebase</span>
+                <div class="brand-info">
+                    <h1>Combustíveis <strong>MT</strong></h1>
+                    <span class="brand-sub">Dados Oficiais SEFAZ-MT</span>
                 </div>
             </div>
 
-            <div class="nav-actions">
-                <div class="last-sync-badge" id="lastSyncBadge" title="Status da sincronização">
-                    <i class="fa-solid fa-shield-halved"></i>
-                    <span id="lastUpdatedText">Aguardando login...</span>
+            <div class="header-right">
+                <div class="status-indicator" id="statusIndicator">
+                    <span class="status-dot"></span>
+                    <span id="syncStatusText">Conectando...</span>
                 </div>
 
-                <!-- User Profile / Logout (Visível após autenticação) -->
-                <div class="user-profile" id="userProfile" style="display: none;">
-                    <div class="user-avatar" id="userAvatar">
-                        <i class="fa-solid fa-user-check"></i>
+                <!-- User Profile Bar -->
+                <div class="user-session" id="userSession" style="display: none;">
+                    <div class="user-pill">
+                        <i class="fa-solid fa-circle-user"></i>
+                        <span id="userEmailLabel">usuario@gmail.com</span>
                     </div>
-                    <span class="user-email" id="userEmailText">usuario@gmail.com</span>
-                    <button id="logoutBtn" class="btn-logout" title="Encerrar sessão">
-                        <i class="fa-solid fa-right-from-bracket"></i> Sair
+                    <button id="logoutBtn" class="btn-ghost" title="Encerrar sessão">
+                        <i class="fa-solid fa-arrow-right-from-bracket"></i>
                     </button>
                 </div>
-                
-                <button id="themeToggleBtn" class="action-btn" title="Alternar tema Claro/Escuro" aria-label="Alternar Tema">
+
+                <button id="themeToggleBtn" class="btn-icon" title="Alternar tema">
                     <i class="fa-solid fa-moon" id="themeIcon"></i>
                 </button>
             </div>
         </div>
     </header>
 
-    <!-- Main Container -->
-    <main class="main-content">
-        <!-- 1. TELA DE AUTENTICAÇÃO (Visível quando deslogado) -->
-        <section class="auth-gate-section" id="authGate">
-            <div class="auth-card">
+    <main class="app-main">
+        <!-- 1. Tela de Login (Autenticação Gate) -->
+        <section class="auth-wrapper" id="authGate">
+            <div class="auth-box">
                 <div class="auth-header">
-                    <div class="auth-icon-circle">
-                        <i class="fa-solid fa-lock"></i>
+                    <div class="auth-icon">
+                        <i class="fa-solid fa-shield-halved"></i>
                     </div>
                     <h2>Acesso Restrito</h2>
-                    <p>Faça login com sua conta autorizada para visualizar os preços, mapa e análises em tempo real.</p>
+                    <p>Acesse com sua conta autorizada para visualizar os preços e o mapa de Mato Grosso.</p>
                 </div>
 
-                <div class="auth-alert error" id="authAlert" style="display: none;">
-                    <i class="fa-solid fa-triangle-exclamation"></i>
-                    <span id="authAlertMsg">Erro de autenticação.</span>
+                <div class="auth-alert" id="authAlert" style="display: none;">
+                    <i class="fa-solid fa-circle-exclamation"></i>
+                    <span id="authAlertMsg"></span>
                 </div>
 
-                <!-- Botão Login com Google (1 clique!) -->
-                <button type="button" id="btnGoogleLogin" class="btn-google">
-                    <i class="fa-brands fa-google"></i> Entrar com Google
+                <button type="button" id="btnGoogleLogin" class="btn-google-auth">
+                    <i class="fa-brands fa-google"></i> Continuar com o Google
                 </button>
 
-                <div class="auth-divider">
-                    <span>ou com e-mail e senha</span>
+                <div class="auth-sep">
+                    <span>ou acesse com e-mail</span>
                 </div>
 
-                <form id="loginForm" class="auth-form">
-                    <div class="form-group">
-                        <label for="loginEmail"><i class="fa-solid fa-envelope"></i> E-mail</label>
-                        <input type="email" id="loginEmail" placeholder="seu-email@exemplo.com" autocomplete="email">
+                <form id="loginForm" class="login-form">
+                    <div class="input-group">
+                        <label for="loginEmail">E-mail</label>
+                        <input type="email" id="loginEmail" placeholder="nome@exemplo.com" autocomplete="email">
                     </div>
 
-                    <div class="form-group">
-                        <label for="loginPassword"><i class="fa-solid fa-key"></i> Senha</label>
-                        <div class="password-input-wrapper">
-                            <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password">
-                            <button type="button" id="togglePasswordBtn" class="btn-show-pass" title="Mostrar/Ocultar senha">
+                    <div class="input-group">
+                        <label for="loginPassword">Senha</label>
+                        <div class="password-field">
+                            <input type="password" id="loginPassword" placeholder="Sua senha" autocomplete="current-password">
+                            <button type="button" id="togglePasswordBtn" class="btn-pwd" tabindex="-1">
                                 <i class="fa-solid fa-eye" id="eyeIcon"></i>
                             </button>
                         </div>
                     </div>
 
-                    <button type="submit" id="loginSubmitBtn" class="btn-primary auth-submit-btn">
-                        <span id="btnSubmitText"><i class="fa-solid fa-arrow-right-to-bracket"></i> Entrar com E-mail</span>
-                        <span id="btnSubmitSpinner" class="spinner" style="display: none;"></span>
+                    <button type="submit" id="loginSubmitBtn" class="btn-action btn-full">
+                        <span id="btnSubmitText">Entrar</span>
+                        <span id="btnSubmitSpinner" class="loader" style="display: none;"></span>
                     </button>
                 </form>
 
-                <!-- Configuração de Conexão Firebase (Expansível) -->
-                <div class="config-accordion">
-                    <button type="button" class="accordion-toggle" id="configToggleBtn">
-                        <i class="fa-solid fa-gear"></i> Configurações do Firebase <i class="fa-solid fa-chevron-down chevron"></i>
+                <div class="auth-footer">
+                    <button type="button" id="configToggleBtn" class="btn-link">
+                        <i class="fa-solid fa-sliders"></i> Chaves de Conexão
                     </button>
-                    <div class="accordion-content" id="configContent" style="display: none;">
-                        <p class="config-desc">Cole as chaves do seu Web App no Firebase (Console > Project Settings):</p>
-                        <div class="form-group">
+                    <div id="configContent" class="config-panel" style="display: none;">
+                        <div class="input-group">
                             <label for="cfgApiKey">API Key</label>
-                            <input type="text" id="cfgApiKey" placeholder="AIzaSy...">
+                            <input type="text" id="cfgApiKey">
                         </div>
-                        <div class="form-group">
+                        <div class="input-group">
                             <label for="cfgProjectId">Project ID</label>
-                            <input type="text" id="cfgProjectId" placeholder="seu-projeto-12345">
+                            <input type="text" id="cfgProjectId">
                         </div>
-                        <div class="form-group">
-                            <label for="cfgAuthDomain">Auth Domain</label>
-                            <input type="text" id="cfgAuthDomain" placeholder="seu-projeto.firebaseapp.com">
-                        </div>
-                        <button type="button" id="saveConfigBtn" class="btn-secondary btn-full">
-                            <i class="fa-solid fa-floppy-disk"></i> Salvar Chaves do Firebase
-                        </button>
+                        <button type="button" id="saveConfigBtn" class="btn-action btn-sm">Salvar</button>
                     </div>
-                </div>
-
-                <div class="auth-footer-notice">
-                    <i class="fa-solid fa-shield-check"></i> Protegido com <strong>Firebase Security Rules</strong>.
                 </div>
             </div>
         </section>
 
-        <!-- 2. PAINEL DE DADOS PROTEGIDO (Visível após login) -->
+        <!-- 2. Dashboard Analítico -->
         <div id="dashboardContent" style="display: none;">
-            <!-- Hero Section -->
-            <section class="hero-section">
-                <div class="hero-text">
-                    <span class="hero-tag"><i class="fa-solid fa-bolt"></i> Extração Automatizada SEFAZ-MT</span>
-                    <h1>Monitor de Preços de Combustíveis em Mato Grosso</h1>
-                    <p>Mapeamento geográfico interativo, evolução temporal e cálculo de paridade etanol x gasolina em tempo real.</p>
+            <!-- KPI Summary Bar -->
+            <section class="kpi-bar" id="kpiBar">
+                <div class="kpi-card" data-fuel="ETANOL">
+                    <div class="kpi-top">
+                        <span class="kpi-label">Etanol</span>
+                        <span class="kpi-tag">Menor</span>
+                    </div>
+                    <div class="kpi-val" id="kpiEtanolPrice">R$ --</div>
+                    <div class="kpi-sub" id="kpiEtanolStation">Carregando...</div>
+                </div>
+
+                <div class="kpi-card" data-fuel="GASOLINA COMUM">
+                    <div class="kpi-top">
+                        <span class="kpi-label">Gasolina Comum</span>
+                        <span class="kpi-tag">Menor</span>
+                    </div>
+                    <div class="kpi-val" id="kpiGasolinaPrice">R$ --</div>
+                    <div class="kpi-sub" id="kpiGasolinaStation">Carregando...</div>
+                </div>
+
+                <div class="kpi-card" data-fuel="GASOLINA ADITIVADA">
+                    <div class="kpi-top">
+                        <span class="kpi-label">Gasolina Aditivada</span>
+                        <span class="kpi-tag">Menor</span>
+                    </div>
+                    <div class="kpi-val" id="kpiAditivadaPrice">R$ --</div>
+                    <div class="kpi-sub" id="kpiAditivadaStation">Carregando...</div>
+                </div>
+
+                <div class="kpi-card" data-fuel="DIESEL S10">
+                    <div class="kpi-top">
+                        <span class="kpi-label">Diesel S10</span>
+                        <span class="kpi-tag">Menor</span>
+                    </div>
+                    <div class="kpi-val" id="kpiDieselPrice">R$ --</div>
+                    <div class="kpi-sub" id="kpiDieselStation">Carregando...</div>
+                </div>
+
+                <!-- Card de Paridade 70% -->
+                <div class="kpi-card kpi-parity" id="parityCard">
+                    <div class="kpi-top">
+                        <span class="kpi-label">Paridade Etanol/Gasolina</span>
+                        <span class="parity-badge" id="parityBadge">70%</span>
+                    </div>
+                    <div class="parity-row">
+                        <div class="kpi-val" id="parityRatioValue">--%</div>
+                        <div class="parity-verdict" id="parityVerdict">Calculando...</div>
+                    </div>
+                    <div class="kpi-sub" id="parityDesc">Relação de preços médios</div>
                 </div>
             </section>
 
-            <!-- Card de Paridade Etanol vs Gasolina (Regra dos 70%) -->
-            <section class="parity-section">
-                <div class="parity-card" id="parityCard">
-                    <div class="parity-header">
-                        <div class="parity-icon">
-                            <i class="fa-solid fa-scale-balanced"></i>
-                        </div>
-                        <div>
-                            <h3>Paridade Etanol vs Gasolina (Regra dos 70%)</h3>
-                            <p class="parity-sub" id="parityLocation">Calculado com base nos preços médios atuais</p>
-                        </div>
+            <!-- Control Bar (Filters) -->
+            <section class="controls-bar">
+                <div class="fuel-selector" id="fuelSelector">
+                    <button class="filter-chip active" data-fuel="ALL">Todos</button>
+                    <button class="filter-chip" data-fuel="ETANOL">Etanol</button>
+                    <button class="filter-chip" data-fuel="GASOLINA COMUM">Gasolina Comum</button>
+                    <button class="filter-chip" data-fuel="GASOLINA ADITIVADA">Gasolina Adit.</button>
+                    <button class="filter-chip" data-fuel="DIESEL S10">Diesel S10</button>
+                    <button class="filter-chip" data-fuel="DIESEL S500">Diesel S500</button>
+                </div>
+
+                <div class="filter-inputs">
+                    <div class="search-field">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <input type="text" id="searchInput" placeholder="Buscar posto ou município...">
+                        <button id="clearSearchBtn" class="btn-clear" style="display: none;"><i class="fa-solid fa-xmark"></i></button>
                     </div>
-                    <div class="parity-body">
-                        <div class="parity-metric">
-                            <span class="parity-ratio" id="parityRatioValue">--%</span>
-                            <span class="parity-label">Relação de Preço</span>
-                        </div>
-                        <div class="parity-decision" id="parityDecision">
-                            <div class="decision-badge" id="decisionBadge">Analisando dados...</div>
-                            <p class="decision-desc" id="decisionDesc">Aguardando dados para recomendação.</p>
-                        </div>
+
+                    <div class="select-field">
+                        <select id="citySelect">
+                            <option value="ALL">Todo o Estado (MT)</option>
+                        </select>
                     </div>
+
+                    <div class="select-field">
+                        <select id="sortSelect">
+                            <option value="price-asc">Menor Preço</option>
+                            <option value="price-desc">Maior Preço</option>
+                            <option value="date-desc">Mais Recentes</option>
+                            <option value="distance-asc">Menor Distância</option>
+                        </select>
+                    </div>
+
+                    <button id="btnRefreshData" class="btn-icon-square" title="Recarregar dados">
+                        <i class="fa-solid fa-arrows-rotate"></i>
+                    </button>
                 </div>
             </section>
 
-            <!-- KPI Cards Grid -->
-            <section class="kpis-section">
-                <div class="kpis-grid" id="kpisContainer">
-                    <div class="kpi-card skeleton"></div>
-                    <div class="kpi-card skeleton"></div>
-                    <div class="kpi-card skeleton"></div>
-                    <div class="kpi-card skeleton"></div>
-                    <div class="kpi-card skeleton"></div>
+            <!-- Map View: Destacando Mato Grosso -->
+            <section class="map-container-card">
+                <div class="map-card-header">
+                    <div class="map-header-title">
+                        <h2><i class="fa-solid fa-location-dot"></i> Distribuição Geográfica em Mato Grosso</h2>
+                        <span class="map-count" id="mapPostosCount">Carregando postos...</span>
+                    </div>
+                    <div class="map-header-tools">
+                        <div class="map-legend-pills">
+                            <span class="leg-pill leg-green"><span class="dot"></span> Mais Baratos</span>
+                            <span class="leg-pill leg-blue"><span class="dot"></span> Na Média</span>
+                            <span class="leg-pill leg-red"><span class="dot"></span> Mais Caros</span>
+                        </div>
+                        <button id="btnFitMT" class="btn-sm-action" title="Enquadrar Estado de Mato Grosso">
+                            <i class="fa-solid fa-expand"></i> Ver Todo o Estado
+                        </button>
+                    </div>
+                </div>
+
+                <div class="map-view-wrapper">
+                    <div id="map" class="leaflet-map-canvas"></div>
                 </div>
             </section>
 
-            <!-- MAPA INTERATIVO LEAFLET -->
-            <section class="map-section">
-                <div class="map-card">
-                    <div class="map-header">
-                        <div class="map-title-box">
-                            <h2><i class="fa-solid fa-map-location-dot"></i> Mapa de Postos e Menores Preços</h2>
-                            <p class="map-subtitle">Visualize a distribuição geográfica dos postos com identificação por faixa de preço</p>
-                        </div>
-                        <div class="map-actions">
-                            <button id="btnRecenterMap" class="btn-secondary" title="Centralizar mapa na visualização">
-                                <i class="fa-solid fa-crosshairs"></i> Centralizar
-                            </button>
-                        </div>
+            <!-- Analytics Section -->
+            <section class="analytics-grid">
+                <!-- Gráfico 1: Evolução Temporal -->
+                <div class="analytics-card chart-span-2">
+                    <div class="card-head">
+                        <h3><i class="fa-solid fa-chart-line"></i> Histórico de Preço Médio Diário</h3>
                     </div>
-
-                    <!-- Leaflet Map Container -->
-                    <div class="map-wrapper">
-                        <div id="map" class="map-canvas"></div>
-                        
-                        <!-- Legenda Flutuante do Mapa -->
-                        <div class="map-legend">
-                            <h4><i class="fa-solid fa-layer-group"></i> Faixa de Preço</h4>
-                            <div class="legend-item">
-                                <span class="legend-color color-cheapest"></span>
-                                <span>Mais Baratos (&lt; 25%)</span>
-                            </div>
-                            <div class="legend-item">
-                                <span class="legend-color color-medium"></span>
-                                <span>Preço Médio (25% - 75%)</span>
-                            </div>
-                            <div class="legend-item">
-                                <span class="legend-color color-expensive"></span>
-                                <span>Preço Mais Alto (&gt; 75%)</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- ANALYTICS CHARTS SECTION -->
-            <section class="charts-section">
-                <!-- Gráfico 1: Evolução de Preços ao Longo do Tempo -->
-                <div class="chart-card chart-card-wide">
-                    <div class="chart-header">
-                        <div>
-                            <h3><i class="fa-solid fa-chart-line"></i> Evolução de Preços ao Longo do Tempo</h3>
-                            <p class="chart-subtitle">Histórico diário do preço médio por tipo de combustível</p>
-                        </div>
-                    </div>
-                    <div class="chart-container chart-container-large">
+                    <div class="chart-box">
                         <canvas id="priceEvolutionChart"></canvas>
                     </div>
                 </div>
 
-                <!-- Gráfico 2: Paridade Etanol vs Gasolina ao Longo do Tempo -->
-                <div class="chart-card">
-                    <div class="chart-header">
-                        <div>
-                            <h3><i class="fa-solid fa-percent"></i> Histórico da Relação Etanol / Gasolina</h3>
-                            <p class="chart-subtitle">Valores abaixo da linha de 70% indicam vantagem para Etanol</p>
-                        </div>
+                <!-- Gráfico 2: Paridade ao Longo do Tempo -->
+                <div class="analytics-card">
+                    <div class="card-head">
+                        <h3><i class="fa-solid fa-percent"></i> Tendência da Relação Etanol / Gasolina</h3>
                     </div>
-                    <div class="chart-container">
+                    <div class="chart-box">
                         <canvas id="parityChart"></canvas>
                     </div>
                 </div>
 
-                <!-- Gráfico 3: Menor Preço vs Média por Cidade -->
-                <div class="chart-card">
-                    <div class="chart-header">
-                        <div>
-                            <h3><i class="fa-solid fa-chart-simple"></i> Menor Preço vs Média por Cidade</h3>
-                            <p class="chart-subtitle">Comparativo de valores por município para o combustível selecionado</p>
-                        </div>
+                <!-- Gráfico 3: Preço por Município -->
+                <div class="analytics-card">
+                    <div class="card-head">
+                        <h3><i class="fa-solid fa-chart-column"></i> Média e Menor Preço por Município</h3>
                     </div>
-                    <div class="chart-container">
+                    <div class="chart-box">
                         <canvas id="cityComparisonChart"></canvas>
                     </div>
                 </div>
             </section>
 
-            <!-- Filter & Search Controls -->
-            <section class="filter-section">
-                <div class="filter-panel">
-                    <div class="filter-row-top">
-                        <!-- Fuel Type Pills -->
-                        <div class="fuel-pills" id="fuelPills">
-                            <button class="pill-btn active" data-fuel="ALL">Todos os Combustíveis</button>
-                            <button class="pill-btn" data-fuel="ETANOL"><i class="fa-solid fa-leaf"></i> Etanol</button>
-                            <button class="pill-btn" data-fuel="GASOLINA COMUM"><i class="fa-solid fa-gas-pump"></i> Gasolina Comum</button>
-                            <button class="pill-btn" data-fuel="GASOLINA ADITIVADA"><i class="fa-solid fa-fire"></i> Gasolina Aditivada</button>
-                            <button class="pill-btn" data-fuel="DIESEL S10"><i class="fa-solid fa-truck"></i> Diesel S10</button>
-                            <button class="pill-btn" data-fuel="DIESEL S500"><i class="fa-solid fa-truck-moving"></i> Diesel S500</button>
-                        </div>
-
-                        <!-- Export Actions -->
-                        <div class="export-actions">
-                            <button id="btnExportCSV" class="btn-secondary" title="Exportar dados filtrados em CSV">
-                                <i class="fa-solid fa-file-csv"></i> CSV
-                            </button>
-                            <button id="btnExportJSON" class="btn-secondary" title="Exportar dados filtrados em JSON">
-                                <i class="fa-solid fa-file-code"></i> JSON
-                            </button>
-                            <button id="btnRefreshData" class="btn-secondary" title="Recarregar dados do banco">
-                                <i class="fa-solid fa-rotate"></i> Atualizar
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="filter-row-bottom">
-                        <!-- Search Input -->
-                        <div class="search-box">
-                            <i class="fa-solid fa-magnifying-glass search-icon"></i>
-                            <input type="text" id="searchInput" placeholder="Buscar por posto, município ou CNPJ..." autocomplete="off">
-                            <button id="clearSearchBtn" class="clear-search-btn" title="Limpar busca"><i class="fa-solid fa-xmark"></i></button>
-                        </div>
-
-                        <!-- City Filter Dropdown -->
-                        <div class="select-wrapper">
-                            <i class="fa-solid fa-location-dot select-icon"></i>
-                            <select id="citySelect">
-                                <option value="ALL">Todas as Cidades</option>
-                            </select>
-                        </div>
-
-                        <!-- Sort Dropdown -->
-                        <div class="select-wrapper">
-                            <i class="fa-solid fa-arrow-down-short-wide select-icon"></i>
-                            <select id="sortSelect">
-                                <option value="price-asc">Menor Preço (R$)</option>
-                                <option value="price-desc">Maior Preço (R$)</option>
-                                <option value="date-desc">Mais Recentes</option>
-                                <option value="distance-asc">Menor Distância (km)</option>
-                                <option value="name-asc">Nome do Posto (A-Z)</option>
-                            </select>
-                        </div>
-
-                        <!-- Reset Button -->
-                        <button id="resetFiltersBtn" class="btn-reset" title="Limpar todos os filtros">
-                            <i class="fa-solid fa-rotate-left"></i> Limpar
+            <!-- Table Section -->
+            <section class="table-card">
+                <div class="table-head-bar">
+                    <h3><i class="fa-solid fa-list-ul"></i> Detalhamento dos Registros</h3>
+                    <div class="table-actions">
+                        <span class="table-total" id="tableTotalCount">0 registros</span>
+                        <button id="btnExportCSV" class="btn-sm-action" title="Baixar CSV">
+                            <i class="fa-solid fa-download"></i> CSV
                         </button>
                     </div>
                 </div>
-            </section>
 
-            <!-- Data Table Section -->
-            <section class="table-section">
-                <div class="table-card">
-                    <div class="table-card-header">
-                        <div class="table-info">
-                            <h2>Lista de Preços Detalhada</h2>
-                            <span class="records-badge" id="recordsBadge">Carregando registros...</span>
-                        </div>
-                    </div>
+                <div class="table-wrapper">
+                    <table class="clean-table" id="pricesTable">
+                        <thead>
+                            <tr>
+                                <th>Classificação</th>
+                                <th>Estabelecimento / Emissor</th>
+                                <th>Combustível</th>
+                                <th>Preço (R$)</th>
+                                <th>Município</th>
+                                <th>Distância</th>
+                                <th>Emissão da NF</th>
+                                <th>Rota</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                            <!-- Linhas injetadas via JS -->
+                        </tbody>
+                    </table>
+                </div>
 
-                    <div class="table-responsive">
-                        <table class="data-table" id="pricesTable">
-                            <thead>
-                                <tr>
-                                    <th>Status</th>
-                                    <th>Posto / Emissor</th>
-                                    <th>Combustível</th>
-                                    <th>Preço Unitário</th>
-                                    <th>Município</th>
-                                    <th>Distância</th>
-                                    <th>Última Emissão</th>
-                                    <th>Ações</th>
-                                </tr>
-                            </thead>
-                            <tbody id="tableBody">
-                                <!-- Injetado dinamicamente via JS -->
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <!-- Pagination -->
-                    <div class="pagination-wrapper">
-                        <div class="pagination-info" id="paginationInfo">
-                            Página 1 de 1
-                        </div>
-                        <div class="pagination-controls" id="paginationControls">
-                            <!-- Botões de paginação -->
-                        </div>
-                    </div>
+                <div class="table-footer-bar">
+                    <span id="pageInfoText">Página 1 de 1</span>
+                    <div class="pagination-btns" id="paginationControls"></div>
                 </div>
             </section>
         </div>
     </main>
 
-    <!-- Footer -->
-    <footer class="footer">
-        <div class="footer-container">
-            <p><strong>Menor Preço MT</strong> &copy; 2026. Acesso Seguro Autenticado.</p>
-            <p class="footer-sub">Pipeline automatizado via GitHub Actions conectado ao Google Cloud Firestore com mapa interativo e análise de paridade.</p>
+    <footer class="app-footer">
+        <div class="footer-inner">
+            <span><strong>Monitor de Combustíveis MT</strong> &bull; Dados extraídos da SEFAZ-MT (Nota MT)</span>
+            <span>Segurança via Firebase Auth &bull; 2026</span>
         </div>
     </footer>
 
-    <!-- JavaScript Principal -->
+    <!-- Aplicação JavaScript -->
     <script src="app.js"></script>
 </body>
 </html>
