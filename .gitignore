@@ -1,21 +1,15 @@
-# Variáveis de ambiente e segredos locais
+# Variáveis de ambiente e segredos locais (Chaves de serviço privadas)
 .env
 .env.local
 *.env
+*firebase-adminsdk*.json
+*-adminsdk-*.json
 
 # Cache e execução Python
 __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
-
-# Dados locais
-docs/data/
-data/
-*.json
-*.csv
-*.db
-*.sqlite3
 
 # Ambientes virtuais
 venv/
@@ -26,3 +20,8 @@ env/
 *.log
 .vscode/
 .idea/
+
+# Arquivos brutos de dados locais
+*.csv
+*.db
+*.sqlite3
