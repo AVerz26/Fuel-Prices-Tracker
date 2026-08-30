@@ -29,7 +29,45 @@ def processar():
     df['descProduto'] = df['descProduto'].apply(normalizar_combustivel)
     df = df.dropna(subset=['descProduto'])
 
-    # 2. Tratamento numérico e remoção de outliers
+    # 2. Filtro Estrito de Estabelecimentos: Apenas Postos de Combustíveis (Exclui Auto Peças, Mecânicas, Mercados, etc.)
+    STATION_PATTERNS = [
+        'POSTO', 'AUTO POSTO', 'PETRO', 'COMBUSTIVEL', 'COMBUSTIVEIS', 'PETROLEO', 
+        'SHELL', 'IPIRANGA', 'PETROBRAS', 'VIBRA', 'RAIZEN', 'RODOIL', 'DISLUB', 
+        'TAURUS', 'ABASTECEDOR', 'ABASTECIMENTO', 'AMAZONIA DE PETROLEO', 'ALE ', 'AMAZONIA',
+        'REDE DE POSTOS', 'REDE '
+    ]
+
+    EXCLUDE_PATTERNS = [
+        'AUTO PECA', 'AUTO PECAS', 'AUTOPECA', 'AUTOPECAS', 'PECAS', 'PECA', 'MECANICA', 
+        'OFICINA', 'AUTO ELETRICA', 'ELETRICA', 'RETIFICA', 'SUPERMERCADO', 'HIPERMERCADO', 
+        'MERCADO', 'MERCEARIA', 'PADARIA', 'FARMACIA', 'DROGARIA', 'CONSTRUTORA', 'CONSTRUCAO', 
+        'AGROPECUARIA', 'AGRO', 'BORRACHARIA', 'LAVACAO', 'LAVA JATO', 'TRANSPORTES', 
+        'TRANSPORTE', 'LOGISTICA', 'LOCADORA', 'TINTAS', 'TINTA', 'FERRAGENS', 'FERRAMENTAS', 
+        'FERRAGEM', 'MOTO PECAS', 'MOTOS', 'MOTO', 'BEBIDAS', 'LANCHONETE', 'HOTEL', 
+        'CHAVEIRO', 'VIDRACARIA', 'AUTO CENTER', 'CENTRO AUTOMOTIVO', 'PNEUS', 'PNEU', 
+        'REPAROS', 'MAQUINAS', 'AGRICOLA', 'PESCA', 'NUTRICAO ANIMAL', 'PARAFUSOS', 
+        'PARAFUSO', 'ACESSORIOS', 'ARMARINHOS', 'VESTUARIO', 'CONFECCOES', 'MATERIAIS', 
+        'FUNILARIA', 'STUDIO CAR', 'BOMBAS INJETORAS', 'VALVULAS E FREIOS', 'FREIOS', 
+        'DISTRIBUIDORA DE BEBIDAS', 'CHOPP', 'CERVEJA'
+    ]
+
+    def is_valid_station(nome):
+        if not nome or pd.isna(nome): return False
+        n = ' ' + str(nome).upper().strip() + ' '
+        is_station = any(p in n for p in STATION_PATTERNS)
+        has_exclusion = any(e in n for e in EXCLUDE_PATTERNS)
+        if is_station:
+            if 'POSTO' in n or 'PETRO' in n or 'COMBUSTIVEL' in n or 'AMAZONIA' in n:
+                return True
+            if not has_exclusion:
+                return True
+            return False
+        return False
+
+    df = df[df['nomeEmissor'].apply(is_valid_station)]
+    print(f"[OK] Registros após filtrar apenas Postos de Combustíveis: {len(df)}")
+
+    # 3. Tratamento numérico e remoção de outliers
     df['valor'] = pd.to_numeric(df['valorUnidadeComercial'], errors='coerce')
     df = df.dropna(subset=['valor'])
 

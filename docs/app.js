@@ -180,6 +180,42 @@ const REALISTIC_PRICE_BOUNDS = {
     'DIESEL S500': { min: 4.00, max: 8.50 }
 };
 
+const STATION_PATTERNS = [
+    'POSTO', 'AUTO POSTO', 'PETRO', 'COMBUSTIVEL', 'COMBUSTIVEIS', 'PETROLEO', 
+    'SHELL', 'IPIRANGA', 'PETROBRAS', 'VIBRA', 'RAIZEN', 'RODOIL', 'DISLUB', 
+    'TAURUS', 'ABASTECEDOR', 'ABASTECIMENTO', 'AMAZONIA DE PETROLEO', 'ALE ', 'AMAZONIA',
+    'REDE DE POSTOS', 'REDE '
+];
+
+const EXCLUDE_PATTERNS = [
+    'AUTO PECA', 'AUTO PECAS', 'AUTOPECA', 'AUTOPECAS', 'PECAS', 'PECA', 'MECANICA', 
+    'OFICINA', 'AUTO ELETRICA', 'ELETRICA', 'RETIFICA', 'SUPERMERCADO', 'HIPERMERCADO', 
+    'MERCADO', 'MERCEARIA', 'PADARIA', 'FARMACIA', 'DROGARIA', 'CONSTRUTORA', 'CONSTRUCAO', 
+    'AGROPECUARIA', 'AGRO', 'BORRACHARIA', 'LAVACAO', 'LAVA JATO', 'TRANSPORTES', 
+    'TRANSPORTE', 'LOGISTICA', 'LOCADORA', 'TINTAS', 'TINTA', 'FERRAGENS', 'FERRAMENTAS', 
+    'FERRAGEM', 'MOTO PECAS', 'MOTOS', 'MOTO', 'BEBIDAS', 'LANCHONETE', 'HOTEL', 
+    'CHAVEIRO', 'VIDRACARIA', 'AUTO CENTER', 'CENTRO AUTOMOTIVO', 'PNEUS', 'PNEU', 
+    'REPAROS', 'MAQUINAS', 'AGRICOLA', 'PESCA', 'NUTRICAO ANIMAL', 'PARAFUSOS', 
+    'PARAFUSO', 'ACESSORIOS', 'ARMARINHOS', 'VESTUARIO', 'CONFECCOES', 'MATERIAIS', 
+    'FUNILARIA', 'STUDIO CAR', 'BOMBAS INJETORAS', 'VALVULAS E FREIOS', 'FREIOS', 
+    'DISTRIBUIDORA DE BEBIDAS', 'CHOPP', 'CERVEJA'
+];
+
+function isGasStation(nome) {
+    if (!nome) return false;
+    const n = ' ' + String(nome).toUpperCase().trim() + ' ';
+    const isStation = STATION_PATTERNS.some(p => n.includes(p));
+    const hasExclusion = EXCLUDE_PATTERNS.some(e => n.includes(e));
+    if (isStation) {
+        if (n.includes('POSTO') || n.includes('PETRO') || n.includes('COMBUSTIVEL') || n.includes('AMAZONIA')) {
+            return true;
+        }
+        if (!hasExclusion) return true;
+        return false;
+    }
+    return false;
+}
+
 function isValidPrice(fuel, price) {
     if (!price || isNaN(price) || price <= 0) return false;
     const bounds = REALISTIC_PRICE_BOUNDS[fuel];
@@ -190,23 +226,23 @@ function isValidPrice(fuel, price) {
 }
 
 // ==========================================================
-// 2. Data Fetching (Dataset Histórico Completo 354k + Live Firestore)
+// 2. Data Fetching (Dataset Histórico Completo 330k + Live Firestore)
 // ==========================================================
 async function loadDataFromFirestore() {
     const statusText = document.getElementById('syncStatusText');
-    statusText.innerText = 'Carregando base completa de Mato Grosso...';
+    statusText.innerText = 'Carregando base completa de postos de MT...';
 
-    // 1. Carrega o dataset consolidado completo com 100% do histórico
+    // 1. Carrega o dataset consolidado completo com 100% dos postos de combustíveis
     try {
         const res = await fetch('data/historico_completo.json');
         if (res.ok) {
             const hist = await res.json();
             if (hist && hist.postos) {
-                state.allData = hist.postos;
+                state.allData = hist.postos.filter(p => isGasStation(p.nome_emissor));
                 state.timelineData = hist.timeline || {};
                 populateCityFilter(state.allData);
                 applyFilters();
-                statusText.innerText = `Base MT: ${hist.total_registros_validos.toLocaleString('pt-BR')} registros (${hist.dias_historico} dias)`;
+                statusText.innerText = `Base MT: ${hist.total_registros_validos.toLocaleString('pt-BR')} abastecimentos (${hist.dias_historico} dias)`;
             }
         }
     } catch (e) {
@@ -222,6 +258,9 @@ async function loadDataFromFirestore() {
 
             snapshot.forEach(doc => {
                 const d = doc.data();
+                const emissor = d.nome_emissor || '';
+                if (!isGasStation(emissor)) return;
+
                 let prod = (d.desc_produto || '').toUpperCase().trim();
                 if (prod === 'GASOLINA COMUM') prod = 'GASOLINA';
                 const val = parseFloat(d.valor_unidade_comercial || d.valor || 0);
@@ -230,7 +269,7 @@ async function loadDataFromFirestore() {
 
                 liveDocs.push({
                     id: d.id || doc.id,
-                    nome_emissor: d.nome_emissor || '',
+                    nome_emissor: emissor,
                     desc_produto: prod,
                     valor: val,
                     municipio: (d.nome_municipio_emissor || d.municipio || '').toUpperCase().trim(),
