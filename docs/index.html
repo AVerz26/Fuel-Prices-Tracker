@@ -54,9 +54,6 @@
 
                 <!-- User Profile Bar -->
                 <div class="user-session" id="userSession" style="display: none;">
-                    <button id="btnAdminUsers" class="btn-sm-action btn-admin-badge" style="display: none;" title="Gerenciar Acessos">
-                        <i class="fa-solid fa-users-gear"></i> <span id="adminPendingCount">Aprovações</span>
-                    </button>
                     <div class="user-pill">
                         <i class="fa-solid fa-circle-user"></i>
                         <span id="userEmailLabel">usuario@gmail.com</span>
@@ -74,21 +71,15 @@
     </header>
 
     <main class="app-main">
-        <!-- 1. Tela de Login / Cadastro (Autenticação Gate) -->
+        <!-- 1. Tela de Login (Autenticação Direta) -->
         <section class="auth-wrapper" id="authGate">
             <div class="auth-box">
                 <div class="auth-header">
                     <div class="auth-icon">
                         <i class="fa-solid fa-shield-halved"></i>
                     </div>
-                    <h2 id="authBoxTitle">Acesso Restrito</h2>
-                    <p id="authBoxSubtitle">Acesse com sua conta ou solicite acesso para aprovação.</p>
-                </div>
-
-                <!-- Abas de Alternância: Entrar vs Solicitar Acesso -->
-                <div class="auth-tabs">
-                    <button type="button" class="auth-tab active" id="tabLoginBtn">Entrar</button>
-                    <button type="button" class="auth-tab" id="tabRegisterBtn">Solicitar Acesso</button>
+                    <h2>Acesso ao Painel</h2>
+                    <p>Entre com o usuário padrão ou com sua conta Google.</p>
                 </div>
 
                 <div class="auth-alert" id="authAlert" style="display: none;">
@@ -96,68 +87,35 @@
                     <span id="authAlertMsg"></span>
                 </div>
 
-                <!-- Formulário de Login -->
-                <div id="loginView">
-                    <button type="button" id="btnGoogleLogin" class="btn-google-auth">
-                        <i class="fa-brands fa-google"></i> Continuar com o Google
-                    </button>
+                <button type="button" id="btnGoogleLogin" class="btn-google-auth">
+                    <i class="fa-brands fa-google"></i> Continuar com o Google
+                </button>
 
-                    <div class="auth-sep">
-                        <span>ou acesse com e-mail</span>
+                <div class="auth-sep">
+                    <span>ou acesse com e-mail</span>
+                </div>
+
+                <form id="loginForm" class="login-form">
+                    <div class="input-group">
+                        <label for="loginEmail">E-mail</label>
+                        <input type="email" id="loginEmail" value="visitante@visitante.com" autocomplete="email" required>
                     </div>
 
-                    <form id="loginForm" class="login-form">
-                        <div class="input-group">
-                            <label for="loginEmail">E-mail</label>
-                            <input type="email" id="loginEmail" placeholder="nome@exemplo.com" autocomplete="email">
+                    <div class="input-group">
+                        <label for="loginPassword">Senha</label>
+                        <div class="password-field">
+                            <input type="password" id="loginPassword" value="visitante" autocomplete="current-password" required>
+                            <button type="button" id="togglePasswordBtn" class="btn-pwd" tabindex="-1">
+                                <i class="fa-solid fa-eye" id="eyeIcon"></i>
+                            </button>
                         </div>
+                    </div>
 
-                        <div class="input-group">
-                            <label for="loginPassword">Senha</label>
-                            <div class="password-field">
-                                <input type="password" id="loginPassword" placeholder="Sua senha" autocomplete="current-password">
-                                <button type="button" id="togglePasswordBtn" class="btn-pwd" tabindex="-1">
-                                    <i class="fa-solid fa-eye" id="eyeIcon"></i>
-                                </button>
-                            </div>
-                        </div>
-
-                        <button type="submit" id="loginSubmitBtn" class="btn-action btn-full">
-                            <span id="btnSubmitText">Entrar</span>
-                            <span id="btnSubmitSpinner" class="loader" style="display: none;"></span>
-                        </button>
-                    </form>
-                </div>
-
-                <!-- Formulário de Registro / Solicitação de Acesso -->
-                <div id="registerView" style="display: none;">
-                    <form id="registerForm" class="login-form">
-                        <div class="input-group">
-                            <label for="regName">Nome Completo</label>
-                            <input type="text" id="regName" placeholder="Seu nome" required autocomplete="name">
-                        </div>
-
-                        <div class="input-group">
-                            <label for="regEmail">E-mail</label>
-                            <input type="email" id="regEmail" placeholder="seuemail@exemplo.com" required autocomplete="email">
-                        </div>
-
-                        <div class="input-group">
-                            <label for="regPassword">Senha (mínimo 6 caracteres)</label>
-                            <input type="password" id="regPassword" placeholder="Crie uma senha" required minlength="6" autocomplete="new-password">
-                        </div>
-
-                        <div class="input-group">
-                            <label for="regConfirmPassword">Confirmar Senha</label>
-                            <input type="password" id="regConfirmPassword" placeholder="Repita a senha" required minlength="6" autocomplete="new-password">
-                        </div>
-
-                        <button type="submit" id="registerSubmitBtn" class="btn-action btn-full">
-                            <span id="btnRegText">Solicitar Acesso</span>
-                            <span id="btnRegSpinner" class="loader" style="display: none;"></span>
-                        </button>
-                    </form>
-                </div>
+                    <button type="submit" id="loginSubmitBtn" class="btn-action btn-full">
+                        <span id="btnSubmitText">Entrar</span>
+                        <span id="btnSubmitSpinner" class="loader" style="display: none;"></span>
+                    </button>
+                </form>
 
                 <div class="auth-footer">
                     <button type="button" id="configToggleBtn" class="btn-link">
@@ -177,43 +135,6 @@
                 </div>
             </div>
         </section>
-
-        <!-- 2. Tela de Conta Pendente de Aprovação -->
-        <section class="auth-wrapper" id="pendingApprovalGate" style="display: none;">
-            <div class="auth-box">
-                <div class="auth-header">
-                    <div class="auth-icon" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">
-                        <i class="fa-solid fa-hourglass-half"></i>
-                    </div>
-                    <h2>Aguardando Aprovação</h2>
-                    <p>Sua solicitação de cadastro foi registrada com sucesso no Firebase e está em análise pelo administrador.</p>
-                </div>
-                <div style="background: var(--bg-subtle); padding: 1rem; border-radius: var(--radius-sm); font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1.25rem;">
-                    Assim que o administrador liberar o seu e-mail, você poderá acessar o mapa e todos os indicadores em tempo real.
-                </div>
-                <button type="button" id="btnPendingLogout" class="btn-secondary btn-full">
-                    <i class="fa-solid fa-arrow-right-from-bracket"></i> Voltar / Sair
-                </button>
-            </div>
-        </section>
-
-        <!-- Modal de Gerenciamento de Usuários (Painel do Administrador) -->
-        <div id="adminUsersModal" class="modal-overlay" style="display: none;">
-            <div class="modal-card">
-                <div class="modal-header">
-                    <h3><i class="fa-solid fa-users-gear"></i> Aprovação de Novos Acessos</h3>
-                    <button type="button" id="btnCloseAdminModal" class="btn-close-modal">&times;</button>
-                </div>
-                <div class="modal-body">
-                    <div id="adminUsersLoading" style="text-align: center; padding: 1.5rem; color: var(--text-muted);">
-                        Carregando solicitações...
-                    </div>
-                    <div id="adminUsersList" class="admin-users-list">
-                        <!-- Itens injetados via JS -->
-                    </div>
-                </div>
-            </div>
-        </div>
 
         <!-- 3. Dashboard Analítico -->
         <div id="dashboardContent" style="display: none;">

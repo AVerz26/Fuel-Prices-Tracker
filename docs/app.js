@@ -81,10 +81,11 @@ function initFirebase() {
             console.warn('Persistência Firestore:', err.code);
         });
 
-        firebase.auth().onAuthStateChanged(async user => {
+        firebase.auth().onAuthStateChanged(user => {
             if (user) {
                 state.currentUser = user;
-                await verifyUserAccessAndRole(user);
+                showDashboard(user);
+                loadDataFromFirestore();
             } else {
                 state.currentUser = null;
                 showAuth();
@@ -95,153 +96,6 @@ function initFirebase() {
         showAuthAlert('Erro ao inicializar Firebase. Verifique a configuração.');
     }
 }
-
-// ==========================================================
-// Controle de Acesso e Aprovação de Usuários
-// ==========================================================
-async function verifyUserAccessAndRole(user) {
-    try {
-        const userRef = state.db.collection('usuarios').doc(user.uid);
-        const userDoc = await userRef.get();
-
-        if (!userDoc.exists) {
-            // Se for o primeiro usuário ou login direto do administrador, cadastra como APROVADO / ADMIN
-            await userRef.set({
-                uid: user.uid,
-                email: user.email,
-                nome: user.displayName || user.email.split('@')[0],
-                status: 'APROVADO',
-                role: 'ADMIN',
-                criado_em: firebase.firestore.FieldValue.serverTimestamp()
-            });
-            showDashboard(user);
-            setupAdminPanel();
-            loadDataFromFirestore();
-            return;
-        }
-
-        const data = userDoc.data();
-        if (data.status === 'PENDENTE') {
-            showPendingGate();
-            return;
-        }
-
-        // Usuário Aprovado
-        showDashboard(user);
-        if (data.role === 'ADMIN' || data.email === user.email) {
-            setupAdminPanel();
-        }
-        loadDataFromFirestore();
-    } catch (e) {
-        console.warn('Verificação de usuário:', e);
-        showDashboard(user);
-        loadDataFromFirestore();
-    }
-}
-
-async function handleRegister(e) {
-    e.preventDefault();
-    hideAuthAlert();
-
-    const name = document.getElementById('regName').value.trim();
-    const email = document.getElementById('regEmail').value.trim();
-    const password = document.getElementById('regPassword').value;
-    const confirmPassword = document.getElementById('regConfirmPassword').value;
-
-    if (password !== confirmPassword) {
-        showAuthAlert('As senhas não coincidem.');
-        return;
-    }
-
-    if (!state.firebaseApp) return showAuthAlert('Configure o Firebase primeiro.');
-    setRegisterLoading(true);
-
-    try {
-        const cred = await firebase.auth().createUserWithEmailAndPassword(email, password);
-        const newUser = cred.user;
-
-        // Grava no Firestore com status PENDENTE para aprovação do administrador
-        await state.db.collection('usuarios').doc(newUser.uid).set({
-            uid: newUser.uid,
-            nome: name,
-            email: email,
-            status: 'PENDENTE',
-            role: 'USER',
-            criado_em: firebase.firestore.FieldValue.serverTimestamp()
-        });
-
-        // Desloga e mostra tela de aprovação pendente
-        await firebase.auth().signOut();
-        showPendingGate();
-    } catch (err) {
-        console.error('Erro no registro:', err);
-        showAuthAlert(err.message || 'Erro ao registrar conta.');
-    } finally {
-        setRegisterLoading(false);
-    }
-}
-
-function setupAdminPanel() {
-    const adminBtn = document.getElementById('btnAdminUsers');
-    if (adminBtn) adminBtn.style.display = 'inline-flex';
-
-    // Ouve em tempo real solicitações pendentes
-    state.db.collection('usuarios').where('status', '==', 'PENDENTE').onSnapshot(snap => {
-        const count = snap.size;
-        document.getElementById('adminPendingCount').innerText = count > 0 ? `Aprovações (${count})` : 'Aprovações';
-        renderAdminUsersList(snap.docs);
-    });
-}
-
-function renderAdminUsersList(docs) {
-    const list = document.getElementById('adminUsersList');
-    const loading = document.getElementById('adminUsersLoading');
-    loading.style.display = 'none';
-
-    if (!docs || docs.length === 0) {
-        list.innerHTML = `<div style="text-align:center;padding:2rem;color:var(--text-muted)">Nenhuma solicitação pendente no momento.</div>`;
-        return;
-    }
-
-    list.innerHTML = '';
-    docs.forEach(doc => {
-        const u = doc.data();
-        const card = document.createElement('div');
-        card.className = 'user-item-card';
-        card.innerHTML = `
-            <div class="user-item-info">
-                <span class="user-item-name">${u.nome || 'Novo Usuário'}</span>
-                <span class="user-item-email">${u.email}</span>
-            </div>
-            <div class="user-item-actions">
-                <button class="btn-approve" onclick="approveUser('${u.uid}')"><i class="fa-solid fa-check"></i> Aprovar</button>
-                <button class="btn-reject" onclick="rejectUser('${u.uid}')"><i class="fa-solid fa-xmark"></i> Recusar</button>
-            </div>
-        `;
-        list.appendChild(card);
-    });
-}
-
-window.approveUser = async function(uid) {
-    try {
-        await state.db.collection('usuarios').doc(uid).update({
-            status: 'APROVADO',
-            aprovado_em: firebase.firestore.FieldValue.serverTimestamp()
-        });
-    } catch (e) {
-        alert('Erro ao aprovar: ' + e.message);
-    }
-};
-
-window.rejectUser = async function(uid) {
-    if (confirm('Deseja realmente recusar o acesso deste usuário?')) {
-        try {
-            await state.db.collection('usuarios').doc(uid).delete();
-        } catch (e) {
-            alert('Erro ao recusar: ' + e.message);
-        }
-    }
-};
 
 async function handleGoogleLogin() {
     hideAuthAlert();
@@ -267,8 +121,17 @@ async function handleEmailLogin(e) {
     try {
         await firebase.auth().signInWithEmailAndPassword(email, password);
     } catch (err) {
+        if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+            try {
+                // Auto-registra o usuário se ainda não existir no Firebase Auth
+                await firebase.auth().createUserWithEmailAndPassword(email, password);
+                return;
+            } catch (createErr) {
+                console.error('Auto-create:', createErr);
+            }
+        }
         console.error('Login Email:', err);
-        showAuthAlert('E-mail ou senha inválidos.');
+        showAuthAlert(err.message || 'E-mail ou senha inválidos.');
     } finally {
         setLoginLoading(false);
     }
@@ -278,20 +141,6 @@ async function handleLogout() {
     if (state.firebaseApp) await firebase.auth().signOut();
     state.currentUser = null;
     showAuth();
-}
-
-function showPendingGate() {
-    document.getElementById('authGate').style.display = 'none';
-    document.getElementById('dashboardContent').style.display = 'none';
-    document.getElementById('userSession').style.display = 'none';
-    document.getElementById('pendingApprovalGate').style.display = 'flex';
-    document.getElementById('syncStatusText').innerText = 'Aprovação pendente';
-}
-
-function setRegisterLoading(isLoading) {
-    document.getElementById('registerSubmitBtn').disabled = isLoading;
-    document.getElementById('btnRegText').style.display = isLoading ? 'none' : 'inline';
-    document.getElementById('btnRegSpinner').style.display = isLoading ? 'inline-block' : 'none';
 }
 
 // Limites realistas de preços de combustíveis (Elimina erros e outliers da SEFAZ)
@@ -1015,54 +864,9 @@ function calculateMovingAverageSeries(continuousDates, rawDateMap, fuelKey, wind
 // 6. Data Table & Pagination
 // ==========================================================
 function initEventListeners() {
-    // Abas de Login vs Registro
-    const tabLoginBtn = document.getElementById('tabLoginBtn');
-    const tabRegisterBtn = document.getElementById('tabRegisterBtn');
-    const loginView = document.getElementById('loginView');
-    const registerView = document.getElementById('registerView');
-    const authBoxTitle = document.getElementById('authBoxTitle');
-    const authBoxSubtitle = document.getElementById('authBoxSubtitle');
-
-    if (tabLoginBtn && tabRegisterBtn) {
-        tabLoginBtn.addEventListener('click', () => {
-            tabLoginBtn.classList.add('active');
-            tabRegisterBtn.classList.remove('active');
-            loginView.style.display = 'block';
-            registerView.style.display = 'none';
-            authBoxTitle.innerText = 'Acesso Restrito';
-            authBoxSubtitle.innerText = 'Acesse com sua conta autorizada para visualizar os preços.';
-            hideAuthAlert();
-        });
-
-        tabRegisterBtn.addEventListener('click', () => {
-            tabRegisterBtn.classList.add('active');
-            tabLoginBtn.classList.remove('active');
-            loginView.style.display = 'none';
-            registerView.style.display = 'block';
-            authBoxTitle.innerText = 'Solicitar Acesso';
-            authBoxSubtitle.innerText = 'Preencha seus dados para solicitar liberação ao administrador.';
-            hideAuthAlert();
-        });
-    }
-
     document.getElementById('btnGoogleLogin').addEventListener('click', handleGoogleLogin);
     document.getElementById('loginForm').addEventListener('submit', handleEmailLogin);
-    document.getElementById('registerForm').addEventListener('submit', handleRegister);
     document.getElementById('logoutBtn').addEventListener('click', handleLogout);
-    document.getElementById('btnPendingLogout').addEventListener('click', handleLogout);
-
-    // Modal de Aprovações do Administrador
-    const btnAdmin = document.getElementById('btnAdminUsers');
-    const modalAdmin = document.getElementById('adminUsersModal');
-    const btnCloseModal = document.getElementById('btnCloseAdminModal');
-
-    if (btnAdmin && modalAdmin) {
-        btnAdmin.addEventListener('click', () => modalAdmin.style.display = 'flex');
-        if (btnCloseModal) btnCloseModal.addEventListener('click', () => modalAdmin.style.display = 'none');
-        modalAdmin.addEventListener('click', (e) => {
-            if (e.target === modalAdmin) modalAdmin.style.display = 'none';
-        });
-    }
 
     document.getElementById('togglePasswordBtn').addEventListener('click', () => {
         const inp = document.getElementById('loginPassword');
