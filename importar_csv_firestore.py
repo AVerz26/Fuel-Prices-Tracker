@@ -53,15 +53,25 @@ def importar_csv(caminho_csv):
     total = len(df)
     print(f"[OK] Total de {total} registros unicos para importar.", flush=True)
 
-    # Converte para lista de tuplas (id, dict)
+    # Converte para lista de tuplas (id, dict) com filtro de outliers
     records = []
     for _, row in df.iterrows():
         doc_id = str(row['id'])
+        prod = str(row['descProduto']).strip().upper() if pd.notnull(row.get('descProduto')) else ''
+        if prod == 'GASOLINA COMUM': prod = 'GASOLINA'
+        val = float(row['valorUnidadeComercial']) if pd.notnull(row.get('valorUnidadeComercial')) else 0.0
+
+        # Filtro de Outliers
+        if prod == 'ETANOL' and not (2.20 <= val <= 6.50): continue
+        elif 'GASOLINA' in prod and not (3.80 <= val <= 9.20): continue
+        elif 'DIESEL' in prod and not (4.00 <= val <= 9.00): continue
+        elif val < 2.00 or val > 10.00: continue
+
         doc_data = {
             "id": doc_id,
             "nome_emissor": str(row['nomeEmissor']).strip() if pd.notnull(row.get('nomeEmissor')) else '',
-            "desc_produto": str(row['descProduto']).strip().upper() if pd.notnull(row.get('descProduto')) else '',
-            "valor_unidade_comercial": float(row['valorUnidadeComercial']) if pd.notnull(row.get('valorUnidadeComercial')) else 0.0,
+            "desc_produto": prod,
+            "valor_unidade_comercial": val,
             "nome_municipio_emissor": str(row['nomeMunicipioEmissor']).strip().upper() if pd.notnull(row.get('nomeMunicipioEmissor')) else '',
             "latitude": float(row['latitudeEstabelecimento']) if pd.notnull(row.get('latitudeEstabelecimento')) else None,
             "longitude": float(row['longitudeEstabelecimento']) if pd.notnull(row.get('longitudeEstabelecimento')) else None,
@@ -70,6 +80,9 @@ def importar_csv(caminho_csv):
             "atualizado_em": firestore.SERVER_TIMESTAMP
         }
         records.append((doc_id, doc_data))
+
+    total = len(records)
+    print(f"[OK] Total de {total} registros válidos (sem outliers) para importar.", flush=True)
 
     batch_size = 450
     chunks = [records[i:i + batch_size] for i in range(0, total, batch_size)]

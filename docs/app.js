@@ -134,8 +134,26 @@ async function handleLogout() {
     showAuth();
 }
 
+// Limites realistas de preços de combustíveis (Elimina erros e outliers da SEFAZ)
+const REALISTIC_PRICE_BOUNDS = {
+    'ETANOL': { min: 2.20, max: 6.50 },
+    'GASOLINA': { min: 3.80, max: 8.50 },
+    'GASOLINA ADITIVADA': { min: 3.80, max: 9.20 },
+    'DIESEL S10': { min: 4.20, max: 8.90 },
+    'DIESEL S500': { min: 4.00, max: 8.50 }
+};
+
+function isValidPrice(fuel, price) {
+    if (!price || isNaN(price) || price <= 0) return false;
+    const bounds = REALISTIC_PRICE_BOUNDS[fuel];
+    if (bounds) {
+        return price >= bounds.min && price <= bounds.max;
+    }
+    return price >= 2.00 && price <= 10.00;
+}
+
 // ==========================================================
-// 2. Data Fetching from Firestore (Ultra Rápido com Cache)
+// 2. Data Fetching from Firestore (Ultra Rápido com Cache e Sem Outliers)
 // ==========================================================
 async function loadDataFromFirestore() {
     const statusText = document.getElementById('syncStatusText');
@@ -146,7 +164,7 @@ async function loadDataFromFirestore() {
         if (cached && state.allData.length === 0) {
             const parsed = JSON.parse(cached);
             if (Array.isArray(parsed) && parsed.length > 0) {
-                state.allData = parsed;
+                state.allData = parsed.filter(d => isValidPrice(d.desc_produto, d.valor));
                 populateCityFilter(state.allData);
                 applyFilters();
                 statusText.innerText = 'Carregado (Cache rápido)';
@@ -174,12 +192,16 @@ async function loadDataFromFirestore() {
             const d = doc.data();
             let prod = (d.desc_produto || '').toUpperCase().trim();
             if (prod === 'GASOLINA COMUM') prod = 'GASOLINA';
+            const val = parseFloat(d.valor_unidade_comercial || d.valor || 0);
+
+            // Filtro de Outliers: descarta leituras fora do intervalo real de mercado
+            if (!isValidPrice(prod, val)) return;
 
             docs.push({
                 id: d.id || doc.id,
                 nome_emissor: d.nome_emissor || '',
                 desc_produto: prod,
-                valor: parseFloat(d.valor_unidade_comercial || d.valor || 0),
+                valor: val,
                 municipio: (d.nome_municipio_emissor || d.municipio || '').toUpperCase().trim(),
                 latitude: d.latitude ? parseFloat(d.latitude) : null,
                 longitude: d.longitude ? parseFloat(d.longitude) : null,
@@ -709,11 +731,26 @@ function renderCharts() {
     });
 }
 
-// Função de Média Móvel com interpolação contínua para lacunas
+function filterOutliersIQR(values) {
+    if (!values || values.length < 4) return values;
+    const sorted = [...values].sort((a, b) => a - b);
+    const q1 = sorted[Math.floor(sorted.length * 0.25)];
+    const q3 = sorted[Math.floor(sorted.length * 0.75)];
+    const iqr = q3 - q1;
+    if (iqr === 0) return values;
+    const minVal = q1 - 1.5 * iqr;
+    const maxVal = q3 + 1.5 * iqr;
+    const filtered = values.filter(v => v >= minVal && v <= maxVal);
+    return filtered.length > 0 ? filtered : values;
+}
+
+// Função de Média Móvel com interpolação contínua e remoção de outliers
 function calculateMovingAverageSeries(continuousDates, rawDateMap, fuelKey, windowSize = 5) {
     const rawValues = continuousDates.map(d => {
-        const vals = rawDateMap[d] && rawDateMap[d][fuelKey];
+        let vals = rawDateMap[d] && rawDateMap[d][fuelKey];
         if (vals && vals.length > 0) {
+            // Remove outliers estatísticos (discrepâncias pontuais da SEFAZ)
+            vals = filterOutliersIQR(vals);
             return vals.reduce((a, b) => a + b, 0) / vals.length;
         }
         return null;

@@ -267,11 +267,23 @@ def job():
     df_final['id'] = df_final['timestamp'].astype(str) + df_final['numrCnpjEmissor'].astype(str) + df_final['descProduto'].astype(str).str[:2]
     df_final['nomeMunicipioEmissor'] = df_final['nomeMunicipioEmissor'].astype(str).str.upper()
 
-    df_clean = df_final[['id', 'nomeEmissor', 'descProduto', 'valorUnidadeComercial', 
-                          'nomeMunicipioEmissor', 'latitudeEstabelecimento', 'longitudeEstabelecimento', 
-                          'distancia', 'dataEmissao_dt']].drop_duplicates(subset=['id'])
+    # Remove outliers e valores irreais
+    def is_valid_fuel_price(row):
+        try:
+            val = float(row['valorUnidadeComercial'])
+            prod = str(row['descProduto']).upper()
+            if prod == 'ETANOL':
+                return 2.20 <= val <= 6.50
+            elif 'GASOLINA' in prod:
+                return 3.80 <= val <= 9.20
+            elif 'DIESEL' in prod:
+                return 4.00 <= val <= 9.00
+            return 2.00 <= val <= 10.00
+        except:
+            return False
 
-    print(f"📊 Processamento concluído! Total de {len(df_clean)} registros únicos.")
+    df_clean = df_clean[df_clean.apply(is_valid_fuel_price, axis=1)]
+    print(f"📊 Processamento concluído! Total de {len(df_clean)} registros válidos (sem outliers).")
 
     # Salva diretamente no Firebase Firestore
     salvar_firestore(df_clean, db)
