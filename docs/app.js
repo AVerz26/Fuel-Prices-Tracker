@@ -300,15 +300,47 @@ async function loadMatoGrossoBoundary() {
     }
 }
 
+function getLatestDate(data) {
+    if (!data || data.length === 0) return null;
+    let latest = null;
+    for (const d of data) {
+        if (d.data_emissao) {
+            const day = d.data_emissao.split('T')[0].split(' ')[0];
+            if (!latest || day > latest) {
+                latest = day;
+            }
+        }
+    }
+    return latest;
+}
+
+function formatDateOnly(str) {
+    if (!str) return '';
+    const p = str.split('T')[0].split(' ')[0].split('-');
+    return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : str;
+}
+
 function renderMap() {
     initMap();
     state.markersGroup.clearLayers();
 
     const valid = state.filteredData.filter(d => d.latitude && d.longitude && !isNaN(d.latitude) && !isNaN(d.longitude));
     
-    // Deduplica postos no mapa: mantém o registro mais recente por posto/localização
+    // Identifica a data mais recente dos postos filtrados
+    const latestDay = getLatestDate(valid);
+
+    // Filtra apenas postos da data mais recente (com fallback para leitura mais recente de cada posto)
+    let recentValid = valid;
+    if (latestDay) {
+        const exactDayValid = valid.filter(d => (d.data_emissao || '').startsWith(latestDay));
+        if (exactDayValid.length > 0) {
+            recentValid = exactDayValid;
+        }
+    }
+
+    // Deduplica postos no mapa: 1 marcador por posto físico
     const uniqueMap = new Map();
-    valid.forEach(item => {
+    recentValid.forEach(item => {
         const key = `${item.nome_emissor}_${item.latitude.toFixed(4)}_${item.longitude.toFixed(4)}_${item.desc_produto}`;
         if (!uniqueMap.has(key)) {
             uniqueMap.set(key, item);
@@ -316,7 +348,8 @@ function renderMap() {
     });
 
     const displayStations = Array.from(uniqueMap.values());
-    document.getElementById('mapPostosCount').innerText = `${displayStations.length} postos mapeados`;
+    const dateTag = latestDay ? ` &bull; ${formatDateOnly(latestDay)}` : '';
+    document.getElementById('mapPostosCount').innerHTML = `${displayStations.length} postos mapeados${dateTag}`;
 
     if (displayStations.length === 0) {
         if (state.mtBounds) state.map.fitBounds(state.mtBounds);
@@ -438,9 +471,22 @@ function renderKPIs() {
     ];
 
     const baseData = state.currentCity === 'ALL' ? state.allData : state.allData.filter(d => d.municipio === state.currentCity);
+    
+    // Identifica estritamente a data mais recente
+    const latestDay = getLatestDate(baseData);
+    let recentData = baseData;
+    if (latestDay) {
+        const exactDayData = baseData.filter(d => (d.data_emissao || '').startsWith(latestDay));
+        if (exactDayData.length > 0) recentData = exactDayData;
+    }
 
     fuels.forEach(f => {
-        const items = baseData.filter(d => d.desc_produto === f.key);
+        let items = recentData.filter(d => d.desc_produto === f.key);
+        if (items.length === 0) {
+            // Se o combustível não tiver emissão exata naquele dia, pega a leitura mais recente dele
+            items = baseData.filter(d => d.desc_produto === f.key);
+        }
+
         const valElem = document.getElementById(f.valId);
         const stElem = document.getElementById(f.stId);
 
@@ -457,8 +503,19 @@ function renderKPIs() {
 
 function renderParity() {
     const baseData = state.currentCity === 'ALL' ? state.allData : state.allData.filter(d => d.municipio === state.currentCity);
-    const etanol = baseData.filter(d => d.desc_produto === 'ETANOL');
-    const gasolina = baseData.filter(d => d.desc_produto === 'GASOLINA');
+    const latestDay = getLatestDate(baseData);
+    
+    let recentData = baseData;
+    if (latestDay) {
+        const exactDayData = baseData.filter(d => (d.data_emissao || '').startsWith(latestDay));
+        if (exactDayData.length > 0) recentData = exactDayData;
+    }
+
+    let etanol = recentData.filter(d => d.desc_produto === 'ETANOL');
+    let gasolina = recentData.filter(d => d.desc_produto === 'GASOLINA');
+
+    if (etanol.length === 0) etanol = baseData.filter(d => d.desc_produto === 'ETANOL');
+    if (gasolina.length === 0) gasolina = baseData.filter(d => d.desc_produto === 'GASOLINA');
 
     const ratioElem = document.getElementById('parityRatioValue');
     const verdictElem = document.getElementById('parityVerdict');
