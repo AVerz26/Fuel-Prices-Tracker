@@ -2,12 +2,16 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
+    // Regra da Coleção de Usuários e Aprovações
+    match /usuarios/{userId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update, delete: if request.auth != null;
+    }
+
     // Regra da Coleção de Preços
     match /precos/{document} {
-      // Apenas usuários autenticados (com Google ou e-mail) podem LER os dados
       allow read: if request.auth != null;
-      
-      // Bloqueia escrita direta pelo frontend (apenas o GitHub Actions com Admin SDK pode escrever)
       allow write: if false;
     }
     
