@@ -1,15 +1,10 @@
-/**
- * Configuração de Acesso ao Supabase
- *
- * Instruções:
- * 1. Obtenha a URL do Projeto e a anon / public key em:
- *    Supabase > Project Settings > API
- * 2. Cole abaixo ou insira diretamente pela tela de login.
- */
-
-window.SUPABASE_CONFIG = {
-    // Exemplo: "https://xyzcompany.supabase.co"
-    url: "", 
-    // Exemplo: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-    anonKey: ""
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyAaRMVn5GGsVGMAa8A1rJ7plDJt7IYod1A",
+  authDomain: "menor-preco-mt.firebaseapp.com",
+  projectId: "menor-preco-mt",
+  storageBucket: "menor-preco-mt.firebasestorage.app",
+  messagingSenderId: "504437867747",
+  appId: "1:504437867747:web:31315f0718581f8a94f1d6",
+  measurementId: "G-24DGW1YCP5"
 };
