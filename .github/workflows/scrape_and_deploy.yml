@@ -3,7 +3,7 @@ name: Coleta Menor Preço SEFAZ-MT e Deploy Pages
 on:
   schedule:
     # Executa a cada 6 horas todos os dias (00:00, 06:00, 12:00, 18:00 UTC)
-    - cron: '0 */6 * * *'
+    - cron: '0 */12 * * *'
   workflow_dispatch: # Permite disparo manual a qualquer momento no GitHub
   push:
     branches:
