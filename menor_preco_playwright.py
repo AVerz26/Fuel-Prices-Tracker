@@ -16,9 +16,9 @@ from firebase_admin import credentials, firestore
 # Carrega variáveis de ambiente de um arquivo .env se existir
 load_dotenv()
 
-# Configurações de Credenciais SEFAZ
-SEFAZ_USERNAME = os.getenv('SEFAZ_USERNAME', '45812131856')
-SEFAZ_PASSWORD = os.getenv('SEFAZ_PASSWORD', 'g80y5vxb8w')
+# Configurações de Credenciais SEFAZ (obtidas via variáveis de ambiente ou .env)
+SEFAZ_USERNAME = os.getenv('SEFAZ_USERNAME', '')
+SEFAZ_PASSWORD = os.getenv('SEFAZ_PASSWORD', '')
 
 # Credencial do Firebase (Pode ser o caminho do arquivo JSON ou a string JSON direto)
 FIREBASE_SERVICE_ACCOUNT = os.getenv('FIREBASE_SERVICE_ACCOUNT', '')
@@ -177,7 +177,9 @@ def job():
     print(f"\n==================================================")
     print(f"Iniciando Coleta Menor Preço SEFAZ-MT: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
     print(f"==================================================")
-    
+    if not SEFAZ_USERNAME or not SEFAZ_PASSWORD:
+        raise ValueError("❌ SEFAZ_USERNAME e/ou SEFAZ_PASSWORD não estão definidos nas variáveis de ambiente (.env ou secrets do sistema).")
+
     db = init_firebase()
 
     auth_val, cookie_string = head(SEFAZ_USERNAME, SEFAZ_PASSWORD)
