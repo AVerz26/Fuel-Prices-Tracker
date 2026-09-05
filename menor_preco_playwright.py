@@ -134,6 +134,10 @@ def salvar_firestore(df, db):
         print("⚠️ Conexão com Firestore não disponível. Pulando salvamento.")
         return
 
+    if df is None or df.empty:
+        print("ℹ️ Nenhum dado para salvar no Firestore.")
+        return
+
     print(f"Iniciando gravação no Google Cloud Firestore...")
     try:
         collection_ref = db.collection('precos')
@@ -147,19 +151,21 @@ def salvar_firestore(df, db):
             chunk = df.iloc[i:i + batch_size]
             
             for _, row in chunk.iterrows():
-                doc_id = str(row["id"])
+                doc_id = str(row["id"]) if "id" in row and pd.notnull(row["id"]) else None
+                if not doc_id:
+                    continue
                 doc_ref = collection_ref.document(doc_id)
                 
                 doc_data = {
                     "id": doc_id,
-                    "nome_emissor": str(row["nomeEmissor"]).strip(),
-                    "desc_produto": str(row["descProduto"]),
-                    "valor_unidade_comercial": float(row["valorUnidadeComercial"]),
-                    "nome_municipio_emissor": str(row["nomeMunicipioEmissor"]).strip().upper(),
-                    "latitude": float(row["latitudeEstabelecimento"]) if pd.notnull(row["latitudeEstabelecimento"]) else None,
-                    "longitude": float(row["longitudeEstabelecimento"]) if pd.notnull(row["longitudeEstabelecimento"]) else None,
-                    "distancia": float(row["distancia"]) if pd.notnull(row["distancia"]) else 0.0,
-                    "data_emissao": str(row["dataEmissao_dt"]),
+                    "nome_emissor": str(row["nomeEmissor"]).strip() if "nomeEmissor" in row and pd.notnull(row["nomeEmissor"]) else "",
+                    "desc_produto": str(row["descProduto"]) if "descProduto" in row and pd.notnull(row["descProduto"]) else "",
+                    "valor_unidade_comercial": float(row["valorUnidadeComercial"]) if "valorUnidadeComercial" in row and pd.notnull(row["valorUnidadeComercial"]) else 0.0,
+                    "nome_municipio_emissor": str(row["nomeMunicipioEmissor"]).strip().upper() if "nomeMunicipioEmissor" in row and pd.notnull(row["nomeMunicipioEmissor"]) else "",
+                    "latitude": float(row["latitudeEstabelecimento"]) if "latitudeEstabelecimento" in row and pd.notnull(row["latitudeEstabelecimento"]) else None,
+                    "longitude": float(row["longitudeEstabelecimento"]) if "longitudeEstabelecimento" in row and pd.notnull(row["longitudeEstabelecimento"]) else None,
+                    "distancia": float(row["distancia"]) if "distancia" in row and pd.notnull(row["distancia"]) else 0.0,
+                    "data_emissao": str(row["dataEmissao_dt"]) if "dataEmissao_dt" in row and pd.notnull(row["dataEmissao_dt"]) else "",
                     "atualizado_em": firestore.SERVER_TIMESTAMP
                 }
                 
@@ -315,8 +321,24 @@ def job():
         except:
             return False
 
-    df_clean = df_clean[df_clean.apply(is_valid_fuel_price, axis=1)]
-    print(f"📊 Processamento concluído! Total de {len(df_clean)} registros válidos de postos (sem outliers).")
+    df_clean = df_clean[df_clean.apply(is_valid_fuel_price, axis=1)].copy()
+
+    if df_clean.empty:
+        print("ℹ️ Nenhum registro válido de posto após as filtragens.")
+        return
+
+    # Criação da Chave Primária (ID) e normalizações
+    df_clean['timestamp'] = pd.to_datetime(df_clean['dataEmissao_dt']).astype('int64') // 10**9
+    cnpj_col = 'numrCnpjEmissor' if 'numrCnpjEmissor' in df_clean.columns else ('numCpfCnpjEmissor' if 'numCpfCnpjEmissor' in df_clean.columns else None)
+    if cnpj_col:
+        cnpj_val = df_clean[cnpj_col].astype(str)
+    else:
+        cnpj_val = ""
+    df_clean['id'] = df_clean['timestamp'].astype(str) + cnpj_val + df_clean['descProduto'].astype(str).str[:2]
+    df_clean['nomeMunicipioEmissor'] = df_clean['nomeMunicipioEmissor'].astype(str).str.upper()
+
+    df_clean = df_clean.drop_duplicates(subset=['id'])
+    print(f"📊 Processamento concluído! Total de {len(df_clean)} registros válidos de postos (sem outliers e sem duplicados).")
 
     # Salva diretamente no Firebase Firestore
     salvar_firestore(df_clean, db)
