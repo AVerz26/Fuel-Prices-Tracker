@@ -215,6 +215,10 @@ def job():
         {"codigo": 5101902, "nome": "BRASNORTE", "lat": -12.125, "lon": -58.006},
         {"codigo": 5107602, "nome": "RONDONOPOLIS", "lat": -16.467, "lon": -54.636},
         {"codigo": 5107909, "nome": "SINOP", "lat": -11.860, "lon": -55.509}
+        {"codigo": 5102504, "nome": "CACERES", "lat": -16.070, "lon": -57.678},
+        {"codigo": 5107958, "nome": "TANGARA DA SERRA", "lat": -14.618, "lon": -57.489},
+        {"codigo": 5105150, "nome": "JUINA", "lat": -11.373, "lon": -58.741},
+        {"codigo": 5100201, "nome": "AGUA BOA", "lat": -14.053, "lon": -52.160}
     ]
 
     dfs = []
