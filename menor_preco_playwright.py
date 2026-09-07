@@ -219,7 +219,13 @@ def job():
         {"codigo": 5107958, "nome": "TANGARA DA SERRA", "lat": -14.618, "lon": -57.489},
         {"codigo": 5105150, "nome": "JUINA", "lat": -11.373, "lon": -58.741},
         {"codigo": 5100201, "nome": "AGUA BOA", "lat": -14.053, "lon": -52.160},
-        {"codigo": 5100250, "nome": "ALTA FLORESTA", "lat": -9.866, "lon": -56.086}
+        {"codigo": 5100250, "nome": "ALTA FLORESTA", "lat": -9.866, "lon": -56.086},
+        {"codigo": 5100607, "nome": "ALTO TAQUARI", "lat": -17.824, "lon": -53.255},
+        {"codigo": 5101407, "nome": "ARIPUANA", "lat": -10.165, "lon": -60.635},
+        {"codigo": 5107008, "nome": "QUERENCIA", "lat": -12.611, "lon": -52.185},
+        {"codigo": 5107875, "nome": "SAPEZAL", "lat": -13.535, "lon": -58.791},
+        {"codigo": 5106752, "nome": "PONTES E LACERDA", "lat": -15.226, "lon": -59.335},
+        {"codigo": 5108501, "nome": "VILA RICA", "lat": -9.988, "lon": -51.117}
     ]
 
     dfs = []
