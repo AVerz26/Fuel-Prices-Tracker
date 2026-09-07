@@ -17,6 +17,11 @@ const state = {
     itemsPerPage: 12,
     map: null,
     markersGroup: null,
+    cityMarkersGroup: null,
+    choroplethLayer: null,
+    heatLayer: null,
+    mapMode: 'pins', // 'pins' | 'heatmap'
+    mtGeoJSON: null,
     mtBoundaryLayer: null,
     mtBounds: null,
     charts: {
@@ -25,6 +30,13 @@ const state = {
         cityComparison: null
     }
 };
+
+function normalizeCityName(str) {
+    if (!str) return '';
+    let c = String(str).toUpperCase().trim();
+    c = c.replace(/\?+$/, '').trim();
+    return c.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
 
 const FUEL_CONFIG = {
     'ETANOL': { class: 'fuel-etanol', label: 'Etanol' },
@@ -238,7 +250,12 @@ async function loadDataFromFirestore() {
         if (res.ok) {
             const hist = await res.json();
             if (hist && hist.postos) {
-                state.allData = hist.postos.filter(p => isGasStation(p.nome_emissor));
+                state.allData = hist.postos
+                    .filter(p => isGasStation(p.nome_emissor))
+                    .map(p => ({
+                        ...p,
+                        municipio: normalizeCityName(p.municipio)
+                    }));
                 state.timelineData = hist.timeline || {};
                 populateCityFilter(state.allData);
                 applyFilters();
@@ -272,7 +289,7 @@ async function loadDataFromFirestore() {
                     nome_emissor: emissor,
                     desc_produto: prod,
                     valor: val,
-                    municipio: (d.nome_municipio_emissor || d.municipio || '').toUpperCase().trim(),
+                    municipio: normalizeCityName(d.nome_municipio_emissor || d.municipio || ''),
                     latitude: d.latitude ? parseFloat(d.latitude) : null,
                     longitude: d.longitude ? parseFloat(d.longitude) : null,
                     distancia: d.distancia ? parseFloat(d.distancia) : 0.0,
@@ -293,6 +310,11 @@ async function loadDataFromFirestore() {
             }
         } catch (err) {
             console.warn('Sync Firestore incremental:', err);
+            if (err.code === 'permission-denied') {
+                statusText.innerText += ' ⚠️ (Firestore: Permissão negada para esta conta - exibindo histórico base)';
+            } else if (err.code === 'unavailable') {
+                statusText.innerText += ' ⚠️ (Firestore offline - exibindo histórico base)';
+            }
         }
     }
 }
@@ -310,17 +332,33 @@ function populateCityFilter(data) {
     });
 }
 
-// Coordenadas padrão dos polos de MT
+// Coordenadas dos municípios e polos regionais de MT
 const CITY_COORDS = {
-    "PRIMAVERA DO LESTE": [-15.552, -54.283],
-    "VARZEA GRANDE": [-15.631, -56.177],
-    "CUIABA": [-15.600, -56.096],
-    "BARRA DO GARCAS": [-15.891, -52.261],
+    "CUIABA": [-15.601, -56.097],
+    "VARZEA GRANDE": [-15.646, -56.132],
+    "RONDONOPOLIS": [-16.467, -54.636],
+    "SINOP": [-11.860, -55.509],
     "SORRISO": [-12.546, -55.726],
+    "TANGARA DA SERRA": [-14.622, -57.493],
+    "PRIMAVERA DO LESTE": [-15.552, -54.283],
+    "BARRA DO GARCAS": [-15.891, -52.261],
+    "LUCAS DO RIO VERDE": [-13.053, -55.910],
+    "CACERES": [-16.076, -57.681],
+    "NOVA MUTUM": [-13.829, -56.082],
+    "CAMPO NOVO DO PARECIS": [-13.675, -57.889],
+    "PONTES E LACERDA": [-15.228, -59.335],
     "CONFRESA": [-10.657, -51.570],
     "BRASNORTE": [-12.125, -58.006],
-    "RONDONOPOLIS": [-16.467, -54.636],
-    "SINOP": [-11.860, -55.509]
+    "JUINA": [-11.378, -58.742],
+    "ALTA FLORESTA": [-9.875, -56.086],
+    "DIAMANTINO": [-14.404, -56.446],
+    "CAMPO VERDE": [-15.545, -55.168],
+    "JACIARA": [-15.965, -54.968],
+    "GUARANTA DO NORTE": [-9.788, -54.908],
+    "AGUA BOA": [-14.049, -52.161],
+    "PEIXOTO DE AZEVEDO": [-10.224, -54.981],
+    "COLIDER": [-10.814, -55.454],
+    "POCONE": [-16.257, -56.623]
 };
 
 // ==========================================================
@@ -335,13 +373,14 @@ function initMap() {
         scrollWheelZoom: true
     }).fitBounds(MT_DEFAULT_BOUNDS);
 
-    // OpenStreetMap 100% livre e gratuito (NÃO requer API Key)
+    // OpenStreetMap 100% livre e gratuito
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
         maxZoom: 19
     }).addTo(state.map);
 
     state.markersGroup = L.layerGroup().addTo(state.map);
+    state.cityMarkersGroup = L.layerGroup().addTo(state.map);
 
     // Carrega o polígono oficial da malha de Mato Grosso (IBGE UF 51)
     loadMatoGrossoBoundary();
@@ -349,7 +388,6 @@ function initMap() {
 
 async function loadMatoGrossoBoundary() {
     try {
-        // API Oficial do IBGE para o contorno do Estado de MT
         const res = await fetch('https://servicodados.ibge.gov.br/api/v3/malhas/estados/51?formato=application/vnd.geo+json');
         if (res.ok) {
             const geojson = await res.json();
@@ -360,7 +398,7 @@ async function loadMatoGrossoBoundary() {
 
             state.mtBoundaryLayer = L.geoJSON(geojson, {
                 style: {
-                    color: '#2563eb',       // Linha de contorno do Estado
+                    color: '#2563eb',
                     weight: 2.5,
                     opacity: 0.85,
                     dashArray: '4, 4',
@@ -396,10 +434,317 @@ function formatDateOnly(str) {
     return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : str;
 }
 
-function renderMap() {
-    initMap();
-    state.markersGroup.clearLayers();
+function getFuelNameLabel(fuelKey) {
+    if (!fuelKey || fuelKey === 'ALL') return 'Todos os Combustíveis';
+    return FUEL_CONFIG[fuelKey]?.label || fuelKey;
+}
 
+// ==========================================================
+// 3.1 Cálculo de Estatísticas por Município
+// ==========================================================
+function computeCityStats(data) {
+    if (!data || data.length === 0) {
+        return { cities: [], minCityAvg: 0, maxCityAvg: 0, overallAvg: 0, totalCount: 0 };
+    }
+
+    const cityMap = new Map();
+    let totalSum = 0;
+    let totalCount = 0;
+
+    data.forEach(item => {
+        if (!item.valor || isNaN(item.valor)) return;
+        const city = normalizeCityName(item.municipio);
+        if (!city) return;
+
+        totalSum += item.valor;
+        totalCount++;
+
+        if (!cityMap.has(city)) {
+            cityMap.set(city, {
+                name: city,
+                prices: [],
+                lats: [],
+                lngs: []
+            });
+        }
+
+        const entry = cityMap.get(city);
+        entry.prices.push(item.valor);
+        if (item.latitude && item.longitude && !isNaN(item.latitude) && !isNaN(item.longitude)) {
+            entry.lats.push(item.latitude);
+            entry.lngs.push(item.longitude);
+        }
+    });
+
+    if (totalCount === 0) {
+        return { cities: [], minCityAvg: 0, maxCityAvg: 0, overallAvg: 0, totalCount: 0 };
+    }
+
+    const overallAvg = totalSum / totalCount;
+    const cities = [];
+
+    cityMap.forEach((entry, name) => {
+        const prices = entry.prices;
+        const avg = prices.reduce((a, b) => a + b, 0) / prices.length;
+        const min = Math.min(...prices);
+        const max = Math.max(...prices);
+
+        let lat, lng;
+        if (CITY_COORDS[name]) {
+            lat = CITY_COORDS[name][0];
+            lng = CITY_COORDS[name][1];
+        } else if (entry.lats.length > 0 && entry.lngs.length > 0) {
+            lat = entry.lats.reduce((a, b) => a + b, 0) / entry.lats.length;
+            lng = entry.lngs.reduce((a, b) => a + b, 0) / entry.lngs.length;
+        } else {
+            return;
+        }
+
+        cities.push({
+            name,
+            avg,
+            min,
+            max,
+            count: prices.length,
+            lat,
+            lng
+        });
+    });
+
+    cities.sort((a, b) => a.avg - b.avg);
+
+    const minCityAvg = cities.length > 0 ? cities[0].avg : 0;
+    const maxCityAvg = cities.length > 0 ? cities[cities.length - 1].avg : 0;
+
+    return {
+        cities,
+        minCityAvg,
+        maxCityAvg,
+        overallAvg,
+        totalCount
+    };
+}
+
+// ==========================================================
+// 3.2 Visualização: Mapa de Calor por Sub-regiões de Mato Grosso (Sem pins, com hover)
+// ==========================================================
+async function loadMatoGrossoGeoJSON() {
+    if (state.mtGeoJSON) return state.mtGeoJSON;
+    try {
+        const res = await fetch('data/mt_municipios.geojson');
+        if (res.ok) {
+            state.mtGeoJSON = await res.json();
+            const tempLayer = L.geoJSON(state.mtGeoJSON);
+            state.mtBounds = tempLayer.getBounds();
+        }
+    } catch (e) {
+        console.warn('Carregamento GeoJSON de municípios:', e);
+    }
+    return state.mtGeoJSON;
+}
+
+function interpolateColor(hex1, hex2, factor) {
+    const c1 = parseInt(hex1.replace('#', ''), 16);
+    const c2 = parseInt(hex2.replace('#', ''), 16);
+    const r1 = (c1 >> 16) & 255, g1 = (c1 >> 8) & 255, b1 = c1 & 255;
+    const r2 = (c2 >> 16) & 255, g2 = (c2 >> 8) & 255, b2 = c2 & 255;
+    const r = Math.round(r1 + factor * (r2 - r1));
+    const g = Math.round(g1 + factor * (g2 - g1));
+    const b = Math.round(b1 + factor * (b2 - b1));
+    return `rgb(${r}, ${g}, ${b})`;
+}
+
+function getPriceColor(price, minPrice, maxPrice) {
+    if (!price || isNaN(price)) return '#0ea5e9';
+    const range = (maxPrice - minPrice) || 1;
+    const t = Math.max(0, Math.min(1, (price - minPrice) / range));
+
+    // Escala suave e profissional de variação de preço:
+    // 0.00: Verde esmeralda (#10b981 - Mais Barato)
+    // 0.25: Ciano suave (#06b6d4)
+    // 0.50: Âmbar/Amarelo (#eab308 - Média)
+    // 0.75: Laranja vibrante (#f97316)
+    // 1.00: Vermelho carmesim (#ef4444 - Mais Caro)
+    if (t <= 0.25) {
+        return interpolateColor('#10b981', '#06b6d4', t / 0.25);
+    } else if (t <= 0.50) {
+        return interpolateColor('#06b6d4', '#eab308', (t - 0.25) / 0.25);
+    } else if (t <= 0.75) {
+        return interpolateColor('#eab308', '#f97316', (t - 0.50) / 0.25);
+    } else {
+        return interpolateColor('#f97316', '#ef4444', (t - 0.75) / 0.25);
+    }
+}
+
+async function renderHeatmap(cityStats) {
+    const geo = await loadMatoGrossoGeoJSON();
+
+    if (!cityStats || cityStats.cities.length === 0 || !geo) {
+        if (state.mtBounds) state.map.fitBounds(state.mtBounds);
+        document.getElementById('mapPostosCount').innerText = 'Sem dados para o mapa de calor';
+        return;
+    }
+
+    const { cities, minCityAvg, maxCityAvg, overallAvg } = cityStats;
+    const fuelLabel = getFuelNameLabel(state.currentFuel);
+
+    // Atualiza cabeçalho e escala da legenda
+    document.getElementById('mapPostosCount').innerHTML = `<strong>141</strong> sub-regiões (MT) &bull; Média Estadual: <strong>R$ ${overallAvg.toFixed(2)}</strong> (${fuelLabel})`;
+    document.getElementById('heatLegendMin').innerText = `R$ ${minCityAvg.toFixed(2)}`;
+    document.getElementById('heatLegendMax').innerText = `R$ ${maxCityAvg.toFixed(2)}`;
+
+    // Cria mapa de acesso rápido para as cidades com dados diretos
+    const directMap = new Map();
+    cities.forEach(c => directMap.set(c.name, c));
+
+    // Para cada sub-região de MT, calcula estatística direta ou interpolação regional (IDW)
+    const subregionStatsMap = new Map();
+
+    geo.features.forEach(feat => {
+        const norm = feat.properties.nome_norm;
+        if (directMap.has(norm)) {
+            const d = directMap.get(norm);
+            subregionStatsMap.set(norm, {
+                name: feat.properties.nome || d.name,
+                avg: d.avg,
+                min: d.min,
+                max: d.max,
+                count: d.count,
+                isDirect: true
+            });
+        } else {
+            // Interpolação ponderada pelo inverso da distância (IDW)
+            const [cLat, cLng] = feat.properties.centroid || [-15.6, -56.1];
+            let sumWeight = 0;
+            let sumPrice = 0;
+            let closestHub = null;
+            let minDistance = Infinity;
+
+            cities.forEach(hub => {
+                const dist = Math.hypot(cLat - hub.lat, cLng - hub.lng) || 0.001;
+                const weight = 1 / Math.pow(dist, 2.2);
+                sumWeight += weight;
+                sumPrice += hub.avg * weight;
+                if (dist < minDistance) {
+                    minDistance = dist;
+                    closestHub = hub;
+                }
+            });
+
+            const estAvg = sumWeight > 0 ? (sumPrice / sumWeight) : overallAvg;
+            subregionStatsMap.set(norm, {
+                name: feat.properties.nome || norm,
+                avg: estAvg,
+                min: null,
+                max: null,
+                count: 0,
+                isDirect: false,
+                closestHub: closestHub ? closestHub.name : null
+            });
+        }
+    });
+
+    // Remove camada coroplética anterior se houver
+    if (state.choroplethLayer && state.map) {
+        state.map.removeLayer(state.choroplethLayer);
+        state.choroplethLayer = null;
+    }
+
+    // Renderiza a camada de polígonos das sub-regiões de todo o estado (SEM PINS)
+    state.choroplethLayer = L.geoJSON(geo, {
+        style: feature => {
+            const norm = feature.properties.nome_norm;
+            const s = subregionStatsMap.get(norm);
+            const price = s ? s.avg : overallAvg;
+            const fillColor = getPriceColor(price, minCityAvg, maxCityAvg);
+
+            return {
+                fillColor: fillColor,
+                weight: 1.0,
+                opacity: 0.6,
+                color: '#1e293b',
+                fillOpacity: 0.78
+            };
+        },
+        onEachFeature: (feature, layer) => {
+            const norm = feature.properties.nome_norm;
+            const s = subregionStatsMap.get(norm) || {
+                name: feature.properties.nome,
+                avg: overallAvg,
+                isDirect: false,
+                count: 0
+            };
+
+            const diffPercent = ((s.avg - overallAvg) / overallAvg) * 100;
+            const diffBadge = diffPercent <= -0.5
+                ? `<span class="city-variation-badge city-variation-cheaper"><i class="fa-solid fa-arrow-trend-down"></i> ${Math.abs(diffPercent).toFixed(1)}% abaixo da média MT</span>`
+                : diffPercent >= 0.5
+                ? `<span class="city-variation-badge city-variation-expensive"><i class="fa-solid fa-arrow-trend-up"></i> +${diffPercent.toFixed(1)}% acima da média MT</span>`
+                : `<span class="city-variation-badge city-variation-neutral"><i class="fa-solid fa-equals"></i> Na média estadual (MT)</span>`;
+
+            const tooltipHtml = `
+                <div class="subregion-hover-card">
+                    <div class="subregion-card-head">
+                        <span class="subregion-title">${s.name}</span>
+                        <span class="subregion-type">${s.isDirect ? `${s.count} posto${s.count > 1 ? 's' : ''}` : 'Estimativa regional'}</span>
+                    </div>
+                    <div class="subregion-price-val">R$ ${s.avg.toFixed(2)} <span class="subregion-unit">média /L</span></div>
+                    ${diffBadge}
+                    ${s.isDirect ? `
+                        <div class="subregion-meta-row">
+                            <span><strong>Menor:</strong> R$ ${s.min.toFixed(2)}</span>
+                            <span><strong>Maior:</strong> R$ ${s.max.toFixed(2)}</span>
+                        </div>
+                    ` : (s.closestHub ? `
+                        <div class="subregion-ref-row">
+                            <i class="fa-solid fa-location-crosshairs"></i> Região de ${s.closestHub}
+                        </div>
+                    ` : '')}
+                </div>
+            `;
+
+            layer.bindTooltip(tooltipHtml, {
+                sticky: true,
+                direction: 'top',
+                offset: [0, -12],
+                className: 'subregion-custom-tooltip'
+            });
+
+            layer.on({
+                mouseover: e => {
+                    const l = e.target;
+                    l.setStyle({
+                        weight: 2.8,
+                        color: '#ffffff',
+                        fillOpacity: 0.94
+                    });
+                    if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
+                        l.bringToFront();
+                    }
+                },
+                mouseout: e => {
+                    if (state.choroplethLayer) {
+                        state.choroplethLayer.resetStyle(e.target);
+                    }
+                },
+                click: e => {
+                    state.map.fitBounds(e.target.getBounds(), { padding: [40, 40] });
+                }
+            });
+        }
+    }).addTo(state.map);
+
+    if (state.currentCity !== 'ALL' && CITY_COORDS[state.currentCity]) {
+        state.map.setView(CITY_COORDS[state.currentCity], 11);
+    } else if (state.mtBounds) {
+        state.map.fitBounds(state.mtBounds, { padding: [20, 20] });
+    }
+}
+
+// ==========================================================
+// 3.3 Visualização: Postos Individuais (Pins)
+// ==========================================================
+function renderStationPins() {
     const valid = state.filteredData.filter(d => d.latitude && d.longitude && !isNaN(d.latitude) && !isNaN(d.longitude));
     
     // Identifica a data mais recente dos postos filtrados
@@ -493,10 +838,57 @@ function renderMap() {
             state.map.fitBounds(bounds, { padding: [30, 30] });
         }
     }
+}
+
+// ==========================================================
+// 3.4 Controle Central de Renderização do Mapa
+// ==========================================================
+function renderMap() {
+    initMap();
+
+    // Limpa camadas existentes
+    state.markersGroup.clearLayers();
+    if (state.cityMarkersGroup) state.cityMarkersGroup.clearLayers();
+    if (state.choroplethLayer && state.map) {
+        state.map.removeLayer(state.choroplethLayer);
+        state.choroplethLayer = null;
+    }
+    if (state.heatLayer && state.map) {
+        state.map.removeLayer(state.heatLayer);
+        state.heatLayer = null;
+    }
+
+    const legendPins = document.getElementById('mapLegendPins');
+    const legendHeat = document.getElementById('mapLegendHeat');
+
+    if (state.mapMode === 'heatmap') {
+        if (legendPins) legendPins.style.display = 'none';
+        if (legendHeat) legendHeat.style.display = 'flex';
+        const cityStats = computeCityStats(state.filteredData);
+        renderHeatmap(cityStats);
+    } else {
+        if (legendPins) legendPins.style.display = 'flex';
+        if (legendHeat) legendHeat.style.display = 'none';
+        renderStationPins();
+    }
 
     setTimeout(() => {
         if (state.map) state.map.invalidateSize();
     }, 150);
+}
+
+function setMapMode(mode) {
+    if (state.mapMode === mode) return;
+    state.mapMode = mode;
+
+    const btnPins = document.getElementById('btnViewPins');
+    const btnHeat = document.getElementById('btnViewHeatmap');
+    if (btnPins && btnHeat) {
+        btnPins.classList.toggle('active', mode === 'pins');
+        btnHeat.classList.toggle('active', mode === 'heatmap');
+    }
+
+    renderMap();
 }
 
 // ==========================================================
@@ -958,6 +1350,12 @@ function initEventListeners() {
             initFirebase();
         }
     });
+
+    // Alternância do Modo do Mapa (Postos vs Mapa de Calor)
+    const btnPins = document.getElementById('btnViewPins');
+    const btnHeat = document.getElementById('btnViewHeatmap');
+    if (btnPins) btnPins.addEventListener('click', () => setMapMode('pins'));
+    if (btnHeat) btnHeat.addEventListener('click', () => setMapMode('heatmap'));
 
     // Enquadrar Estado de MT
     document.getElementById('btnFitMT').addEventListener('click', () => {

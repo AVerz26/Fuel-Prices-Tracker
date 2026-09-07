@@ -878,12 +878,89 @@ body {
     display: flex;
     align-items: center;
     gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+/* Seletor de Modo: Postos vs Mapa de Calor */
+.map-mode-toggle {
+    display: inline-flex;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 2px;
+    gap: 2px;
+}
+
+.btn-map-mode {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 0.28rem 0.65rem;
+    border-radius: calc(var(--radius-sm) - 2px);
+    font-size: 0.74rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    transition: all 0.18s ease;
+}
+
+.btn-map-mode:hover {
+    color: var(--text-main);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.btn-map-mode.active {
+    background: var(--accent-blue);
+    color: #ffffff;
+    box-shadow: 0 1px 4px rgba(37, 99, 235, 0.35);
 }
 
 .map-legend-pills {
     display: flex;
     align-items: center;
     gap: 0.4rem;
+}
+
+/* Legenda do Mapa de Calor */
+.map-legend-heat {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    background: var(--bg-subtle);
+    padding: 0.25rem 0.65rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-subtle);
+    font-size: 0.72rem;
+}
+
+.heat-legend-title {
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+}
+
+.heat-bar-label {
+    font-weight: 700;
+    font-size: 0.72rem;
+}
+
+.heat-bar-label.min-label {
+    color: #10b981;
+}
+
+.heat-bar-label.max-label {
+    color: #ef4444;
+}
+
+.heat-bar-gradient {
+    width: 90px;
+    height: 8px;
+    border-radius: 4px;
+    background: linear-gradient(to right, #10b981, #0ea5e9, #eab308, #f97316, #ef4444);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .leg-pill {
@@ -974,6 +1051,199 @@ body {
     background: #7f1d1d;
     border-color: #ef4444;
     color: #fca5a5;
+}
+
+/* City Heatmap Badges & Markers */
+.city-heat-badge-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transform: translate(-50%, -50%);
+    pointer-events: auto;
+}
+
+.city-heat-pill {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    background: rgba(15, 23, 42, 0.94);
+    backdrop-filter: blur(4px);
+    border: 1.5px solid #3b82f6;
+    border-radius: 8px;
+    padding: 0.25rem 0.55rem;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+    white-space: nowrap;
+}
+
+.city-heat-pill:hover {
+    transform: scale(1.12);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
+    z-index: 9999 !important;
+}
+
+.city-heat-pill .pill-city-name {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: #cbd5e1;
+    text-transform: uppercase;
+    line-height: 1.1;
+}
+
+.city-heat-pill .pill-city-price {
+    font-size: 0.88rem;
+    font-weight: 800;
+    line-height: 1.15;
+    margin-top: 1px;
+}
+
+.city-heat-pill .pill-city-count {
+    font-size: 0.62rem;
+    color: #94a3b8;
+    line-height: 1;
+    margin-top: 1px;
+}
+
+.city-heat-pill.pill-cool {
+    border-color: #10b981;
+    box-shadow: 0 2px 10px rgba(16, 185, 129, 0.25);
+}
+.city-heat-pill.pill-cool .pill-city-price {
+    color: #34d399;
+}
+
+.city-heat-pill.pill-mild {
+    border-color: #0ea5e9;
+    box-shadow: 0 2px 10px rgba(14, 165, 233, 0.25);
+}
+.city-heat-pill.pill-mild .pill-city-price {
+    color: #38bdf8;
+}
+
+.city-heat-pill.pill-warm {
+    border-color: #f59e0b;
+    box-shadow: 0 2px 10px rgba(245, 158, 11, 0.25);
+}
+.city-heat-pill.pill-warm .pill-city-price {
+    color: #fbbf24;
+}
+
+.city-heat-pill.pill-hot {
+    border-color: #ef4444;
+    box-shadow: 0 2px 10px rgba(239, 68, 68, 0.3);
+}
+.city-heat-pill.pill-hot .pill-city-price {
+    color: #f87171;
+}
+
+/* Badge de variação no popup */
+.city-variation-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.2rem 0.45rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.72rem;
+    font-weight: 700;
+    margin-top: 0.25rem;
+}
+
+.city-variation-cheaper {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.city-variation-expensive {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.city-variation-neutral {
+    background: rgba(14, 165, 233, 0.15);
+    color: #0ea5e9;
+    border: 1px solid rgba(14, 165, 233, 0.3);
+}
+
+/* Subregions Choropleth Tooltips & Hover Cards */
+.leaflet-tooltip.subregion-custom-tooltip {
+    background: rgba(15, 23, 42, 0.96) !important;
+    backdrop-filter: blur(8px) !important;
+    border: 1px solid #334155 !important;
+    border-radius: var(--radius-md) !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55) !important;
+    color: var(--text-main) !important;
+    padding: 0.55rem 0.75rem !important;
+    font-family: var(--font) !important;
+    pointer-events: none !important;
+}
+
+.leaflet-tooltip.subregion-custom-tooltip::before {
+    border-top-color: rgba(15, 23, 42, 0.96) !important;
+}
+
+.subregion-hover-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 180px;
+}
+
+.subregion-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.subregion-title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #ffffff;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.subregion-type {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.08);
+    padding: 0.1rem 0.35rem;
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+}
+
+.subregion-price-val {
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: #38bdf8;
+    line-height: 1.2;
+}
+
+.subregion-unit {
+    font-size: 0.68rem;
+    font-weight: 500;
+    color: var(--text-muted);
+}
+
+.subregion-meta-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-top: 0.25rem;
+    margin-top: 0.2rem;
+}
+
+.subregion-ref-row {
+    font-size: 0.68rem;
+    color: var(--text-faint);
+    margin-top: 0.15rem;
 }
 
 /* Leaflet Popups */

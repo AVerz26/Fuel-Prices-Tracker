@@ -14,9 +14,10 @@
     <!-- Font Awesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
-    <!-- Leaflet CSS & JS -->
+    <!-- Leaflet CSS & JS + Leaflet Heat -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -237,11 +238,31 @@
                         <span class="map-count" id="mapPostosCount">Carregando postos...</span>
                     </div>
                     <div class="map-header-tools">
-                        <div class="map-legend-pills">
+                        <!-- Seletor de Modo: Postos vs Mapa de Calor -->
+                        <div class="map-mode-toggle" id="mapModeToggle">
+                            <button type="button" id="btnViewPins" class="btn-map-mode active" title="Visualização por Postos Individuais">
+                                <i class="fa-solid fa-gas-pump"></i> Postos
+                            </button>
+                            <button type="button" id="btnViewHeatmap" class="btn-map-mode" title="Visualização do Mapa de Calor e Médias por Município">
+                                <i class="fa-solid fa-fire-flame-curved"></i> Mapa de Calor
+                            </button>
+                        </div>
+
+                        <!-- Legenda dos Postos -->
+                        <div class="map-legend-pills" id="mapLegendPins">
                             <span class="leg-pill leg-green"><span class="dot"></span> Mais Baratos</span>
                             <span class="leg-pill leg-blue"><span class="dot"></span> Na Média</span>
                             <span class="leg-pill leg-red"><span class="dot"></span> Mais Caros</span>
                         </div>
+
+                        <!-- Legenda Dinâmica do Mapa de Calor -->
+                        <div class="map-legend-heat" id="mapLegendHeat" style="display: none;">
+                            <span class="heat-legend-title">Escala:</span>
+                            <span class="heat-bar-label min-label" id="heatLegendMin">R$ --</span>
+                            <div class="heat-bar-gradient" title="Gradiente de Preço Médio (Mais Barato ao Mais Caro)"></div>
+                            <span class="heat-bar-label max-label" id="heatLegendMax">R$ --</span>
+                        </div>
+
                         <button id="btnFitMT" class="btn-sm-action" title="Enquadrar Estado de Mato Grosso">
                             <i class="fa-solid fa-expand"></i> Ver Todo o Estado
                         </button>
@@ -294,13 +315,6 @@
             </section>
         </div>
     </main>
-
-    <footer class="app-footer">
-        <div class="footer-inner">
-            <span><strong>Monitor de Combustíveis MT</strong> &bull; Análise de Mercado</span>
-            <span>Segurança via Firebase Auth &bull; 2026</span>
-        </div>
-    </footer>
 
     <!-- Aplicação JavaScript -->
     <script src="app.js"></script>
