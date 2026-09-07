@@ -529,6 +529,14 @@ function computeCityStats(data) {
 // 3.2 Visualização: Mapa de Calor por Sub-regiões de Mato Grosso (Sem pins, com hover)
 // ==========================================================
 async function loadMatoGrossoGeoJSON() {
+    if (window.MT_GEOJSON) {
+        state.mtGeoJSON = window.MT_GEOJSON;
+        if (!state.mtBounds) {
+            const tempLayer = L.geoJSON(state.mtGeoJSON);
+            state.mtBounds = tempLayer.getBounds();
+        }
+        return state.mtGeoJSON;
+    }
     if (state.mtGeoJSON) return state.mtGeoJSON;
     try {
         const res = await fetch('data/mt_municipios.geojson');
@@ -579,7 +587,11 @@ function getPriceColor(price, minPrice, maxPrice) {
 async function renderHeatmap(cityStats) {
     const geo = await loadMatoGrossoGeoJSON();
 
-    if (!cityStats || cityStats.cities.length === 0 || !geo) {
+    if (!cityStats || cityStats.cities.length === 0) {
+        cityStats = computeCityStats(state.allData);
+    }
+
+    if (!geo || !cityStats || cityStats.cities.length === 0) {
         if (state.mtBounds) state.map.fitBounds(state.mtBounds);
         document.getElementById('mapPostosCount').innerText = 'Sem dados para o mapa de calor';
         return;
@@ -878,7 +890,6 @@ function renderMap() {
 }
 
 function setMapMode(mode) {
-    if (state.mapMode === mode) return;
     state.mapMode = mode;
 
     const btnPins = document.getElementById('btnViewPins');
@@ -890,6 +901,8 @@ function setMapMode(mode) {
 
     renderMap();
 }
+
+window.setMapMode = setMapMode;
 
 // ==========================================================
 // 4. Filtering & Calculations

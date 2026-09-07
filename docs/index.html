@@ -27,8 +27,9 @@
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
-    <!-- Configurações do Projeto -->
+    <!-- Configurações do Projeto e GeoJSON Local -->
     <script src="config.js"></script>
+    <script src="data/mt_municipios.js"></script>
 
     <!-- Folha de Estilos -->
     <link rel="stylesheet" href="style.css">
@@ -240,10 +241,10 @@
                     <div class="map-header-tools">
                         <!-- Seletor de Modo: Postos vs Mapa de Calor -->
                         <div class="map-mode-toggle" id="mapModeToggle">
-                            <button type="button" id="btnViewPins" class="btn-map-mode active" title="Visualização por Postos Individuais">
+                            <button type="button" id="btnViewPins" class="btn-map-mode active" onclick="setMapMode('pins')" title="Visualização por Postos Individuais">
                                 <i class="fa-solid fa-gas-pump"></i> Postos
                             </button>
-                            <button type="button" id="btnViewHeatmap" class="btn-map-mode" title="Visualização do Mapa de Calor e Médias por Município">
+                            <button type="button" id="btnViewHeatmap" class="btn-map-mode" onclick="setMapMode('heatmap')" title="Visualização do Mapa de Calor e Médias por Município">
                                 <i class="fa-solid fa-fire-flame-curved"></i> Mapa de Calor
                             </button>
                         </div>
